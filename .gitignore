@@ -11,7 +11,6 @@ Thumbs.db
 
 # environment
 .env
-.env.*
 
 # secrets
 *.pem
