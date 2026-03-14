@@ -1,0 +1,25 @@
+# build
+build/
+dist/
+target/
+
+# logs
+logs/
+*.log
+
+# env
+.env
+.env.*
+
+# node
+node_modules/
+
+# coverage
+coverage/
+
+# IDE
+.vscode/
+.idea/
+
+# docker override
+docker-compose.override.yml

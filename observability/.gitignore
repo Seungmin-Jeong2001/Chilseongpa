@@ -1,0 +1,13 @@
+# data
+data/
+storage/
+
+# logs
+*.log
+
+# temp
+tmp/
+
+# env
+.env
+.env.*
