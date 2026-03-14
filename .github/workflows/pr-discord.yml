@@ -1,0 +1,25 @@
+name: PR Discord Notification
+
+on:
+  pull_request:
+    types: [opened, closed]
+
+jobs:
+  notify:
+    if: github.event.action == 'opened' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Send PR notification
+        run: |
+          STATUS="📢 PR 생성"
+
+          if [[ "${{ github.event.pull_request.merged }}" == "true" ]]; then
+            STATUS="✅ PR 머지 완료"
+          fi
+
+          curl -H "Content-Type: application/json" \
+          -d "{
+            \"content\": \"$STATUS\n${{ github.event.pull_request.html_url }}\"
+          }" \
+          "${{ secrets.DISCORD_WEBHOOK }}"
