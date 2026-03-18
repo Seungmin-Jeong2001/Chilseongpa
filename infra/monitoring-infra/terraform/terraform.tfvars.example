@@ -7,9 +7,5 @@ vpc_id = "vpc-xxxxxxxx"
 subnet_id = "subnet-xxxxxxxx"
 key_name = "monitoring-key"
 
-# 보안 및 연결 정보
+# 보안 정보
 bastion_sg_id = "sg-xxxxxxxxxxxxxxxxx"
-vpn_cidr = [
-  "10.xxx.x.x/xx",  # GCP 클러스터 CIDR
-  "10.xxx.x.x/xx"    # AWS 클러스터 CIDR
-]

@@ -61,11 +61,6 @@ variable "key_name" {
   type        = string
 }
 
-variable "vpn_cidr" {
-  description = "CIDR range of VPN connection"
-  type        = list(string)
-}
-
 variable "bastion_sg_id" {
   description = "Security Group ID of Bastion Host"
   type        = string
