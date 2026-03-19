@@ -1,0 +1,7 @@
+- name: Configure Monitoring Server
+  hosts: monitoring
+  become: true
+
+  roles:
+    - { role: docker, tags: ['docker'] }           # Docker 설치/설정
+    - { role: monitoring, tags: ['monitoring'] }   # Monitoring Stack 구성

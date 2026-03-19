@@ -1,0 +1,4 @@
+cf_client_id: "{{ lookup('env', 'CF_CLIENT_ID') }}"           # Cloudflare Access Client ID
+cf_client_secret: "{{ lookup('env', 'CF_CLIENT_SECRET') }}"   # Cloudflare Access Client Secret
+alert_webhook_url: "{{ lookup('env', 'ALERT_WEBHOOK_URL') }}" # Discord Webhook URL
+ebs_device_name: "/dev/xvdf"                                  # EBS 장치명 기본값
