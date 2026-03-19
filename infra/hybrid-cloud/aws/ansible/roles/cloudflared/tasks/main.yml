@@ -1,0 +1,75 @@
+---
+# cloudflared를 k3s Kubernetes 위에 Deployment로 배포
+# tunnel_token은 GitHub Actions CF_TUNNEL_TOKEN Secret으로 전달
+# tunnel_token 없으면 전체 role 건너뜀
+
+- name: Create Cloudflare tunnel token secret
+  ansible.builtin.shell: |
+    KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl create secret generic tunnel-token \
+      --from-literal=token={{ tunnel_token | quote }} \
+      --dry-run=client -o yaml | \
+    KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl apply -f -
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  when: tunnel_token is defined and tunnel_token | trim != ""
+
+- name: Deploy cloudflared Deployment
+  ansible.builtin.shell: |
+    cat <<'EOF' | KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl apply -f -
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: cloudflared
+      namespace: default
+    spec:
+      replicas: 1
+      selector:
+        matchLabels:
+          app: cloudflared
+      template:
+        metadata:
+          labels:
+            app: cloudflared
+        spec:
+          containers:
+            - name: cloudflared
+              image: cloudflare/cloudflared:latest
+              env:
+                - name: TUNNEL_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: tunnel-token
+                      key: token
+              command:
+                - cloudflared
+                - tunnel
+                - --no-autoupdate
+                - run
+    EOF
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  when: tunnel_token is defined and tunnel_token | trim != ""
+
+- name: Wait for cloudflared rollout
+  ansible.builtin.shell: |
+    KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl rollout status deployment/cloudflared --timeout=180s
+  register: cloudflared_rollout
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  when: tunnel_token is defined and tunnel_token | trim != ""
+
+- name: Get cloudflared pod
+  ansible.builtin.shell: |
+    KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get pods -l app=cloudflared -o wide
+  register: cloudflared_pods
+  changed_when: false
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  when: tunnel_token is defined and tunnel_token | trim != ""
+
+- name: Show cloudflared status
+  ansible.builtin.debug:
+    msg:
+      - "{{ cloudflared_rollout.stdout | default('') }}"
+      - "{{ cloudflared_pods.stdout | default('') }}"
+  when: tunnel_token is defined and tunnel_token | trim != ""
