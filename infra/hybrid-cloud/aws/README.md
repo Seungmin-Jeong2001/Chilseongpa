@@ -96,7 +96,7 @@ terraform apply
 
 ```bash
 cd ansible
-# inventory.ini에 k3s 노드 IP 입력 후
+# inventory.ini는 terraform apply 시 자동 생성됨
 
 ansible-playbook -i inventory.ini playbook.yml \
   -e "tunnel_token=<CF_TUNNEL_TOKEN>"
