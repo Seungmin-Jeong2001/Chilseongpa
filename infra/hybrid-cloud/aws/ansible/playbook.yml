@@ -1,0 +1,9 @@
+---
+- name: AWS Standby k3s Node Setup
+  hosts: aws_standby
+  become: true
+
+  roles:
+    - k3s
+    - node-exporter
+    - cloudflared
