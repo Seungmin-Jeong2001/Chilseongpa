@@ -1,6 +1,0 @@
----
-- name: Restart cloudflared
-  shell: |
-    KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl rollout restart deployment/cloudflared
-  environment:
-    KUBECONFIG: /etc/rancher/k3s/k3s.yaml

@@ -1,7 +1,0 @@
----
-- name:  하이브리드 클라우드 K3s & Zero Trust 요새 구축
-  hosts: k3s_nodes
-  become: yes # 관리자(root) 권한으로 실행
-  roles:
-    - k3s_primary
-    - cloudflare
