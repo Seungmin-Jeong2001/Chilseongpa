@@ -26,20 +26,9 @@ output "aws_public_subnet_id" {
 }
 
 # -----------------------------------------------
-# AWS Compute outputs
+# AWS k3s node outputs
 # -----------------------------------------------
-# 희정님 → Monitoring Server SG ingress에 등록
-output "aws_bastion_sg_id" {
-  description = "AWS Bastion SG ID → 희정님 Monitoring Server SG에 등록"
-  value       = module.aws.bastion_sg_id
-}
-
-output "aws_bastion_public_ip" {
-  description = "AWS Bastion Host Public IP"
-  value       = module.aws.bastion_public_ip
-}
-
-# 희정님 → Prometheus Node Exporter scrape 대상
+# Prometheus Node Exporter scrape 대상
 output "aws_k3s_public_ip" {
   description = "AWS k3s Node Public IP"
   value       = module.aws.k3s_public_ip
@@ -48,4 +37,30 @@ output "aws_k3s_public_ip" {
 output "aws_standby_security_group_id" {
   description = "AWS k3s 노드 Security Group ID"
   value       = module.aws.standby_security_group_id
+}
+
+# -----------------------------------------------
+# AWS Bastion outputs
+# -----------------------------------------------
+output "aws_bastion_sg_id" {
+  description = "AWS Bastion SG ID"
+  value       = module.aws.bastion_sg_id
+}
+
+output "aws_bastion_public_ip" {
+  description = "AWS Bastion Host Public IP"
+  value       = module.aws.bastion_public_ip
+}
+
+# -----------------------------------------------
+# AWS Monitoring Server outputs
+# -----------------------------------------------
+output "aws_monitoring_public_ip" {
+  description = "AWS Monitoring Server Public IP"
+  value       = module.aws.monitoring_public_ip
+}
+
+output "aws_monitoring_instance_id" {
+  description = "AWS Monitoring Server EC2 Instance ID"
+  value       = module.aws.monitoring_instance_id
 }

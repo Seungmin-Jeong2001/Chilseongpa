@@ -10,3 +10,5 @@ tmp/
 
 # env
 .env
+
+.pem

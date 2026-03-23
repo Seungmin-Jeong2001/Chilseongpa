@@ -67,10 +67,29 @@ variable "root_volume_size" {
 }
 
 # -----------------------------------------------
+# Monitoring Server 변수
+# -----------------------------------------------
+# Monitoring Server 인스턴스 타입
+variable "monitoring_instance_type" {
+  description = "Monitoring Server EC2 instance type"
+  type        = string
+  default     = "t3.small"
+}
+
+# Monitoring Server EBS Volume 크기
+# Prometheus TSDB 저장 공간 확보 목적
+variable "monitoring_volume_size" {
+  description = "Monitoring Server EBS volume size (GB)"
+  type        = number
+  default     = 30
+}
+
+# -----------------------------------------------
 # Cloudflare 터널 토큰 (cloudflare 모듈에서 전달받음)
 # -----------------------------------------------
 variable "tunnel_token" {
   description = "Cloudflare Tunnel token for cloudflared Pod"
   type        = string
   sensitive   = true
+  default     = ""
 }

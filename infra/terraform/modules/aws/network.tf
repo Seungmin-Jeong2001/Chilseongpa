@@ -29,7 +29,8 @@ resource "aws_internet_gateway" "main" {
 
 # -----------------------------------------------
 # Public Subnet
-# Bastion + k3s 노드 배치
+# Bastion + k3s 노드 + Monitoring Server 배치
+# 모든 서버를 Public Subnet에 배치
 # -----------------------------------------------
 resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.main.id

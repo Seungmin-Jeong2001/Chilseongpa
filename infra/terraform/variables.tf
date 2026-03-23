@@ -37,7 +37,7 @@ variable "gcp_zone" {
   default     = "asia-northeast3-a"
 }
 
-variable "db_password" {
+variable "gcp_db_password" {
   description = "Cloud SQL Root 비밀번호"
   type        = string
   sensitive   = true
@@ -73,12 +73,6 @@ variable "public_subnet_cidr" {
   description = "AWS Public subnet CIDR block"
   type        = string
   default     = "10.20.1.0/24"
-}
-
-variable "private_subnet_cidr" {
-  description = "AWS Private subnet CIDR block"
-  type        = string
-  default     = "10.20.2.0/24"
 }
 
 variable "availability_zone" {
@@ -122,11 +116,21 @@ variable "key_name" {
   type        = string
 }
 
-# Monitoring Server AMI ID
-variable "monitoring_ami_id" {
-  description = "Monitoring Server AMI ID"
+# Monitoring Server 인스턴스 타입
+variable "monitoring_instance_type" {
+  description = "Monitoring Server EC2 instance type"
   type        = string
+  default     = "t3.small"
 }
+
+# Monitoring Server EBS Volume 크기
+# Prometheus TSDB 저장 공간 확보 목적
+variable "monitoring_volume_size" {
+  description = "Monitoring Server EBS volume size (GB)"
+  type        = number
+  default     = 30
+}
+
 
 # -----------------------------------------------
 # Cloudflare variables

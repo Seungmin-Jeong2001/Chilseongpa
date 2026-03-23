@@ -1,0 +1,56 @@
+# -----------------------------------------------
+# 이 파일을 복사해서 terraform.tfvars로 사용하세요
+# cp terraform.tfvars.example terraform.tfvars
+# -----------------------------------------------
+# ⚠️  terraform.tfvars는 절대 Git에 커밋하지 마세요!
+# ⚠️  .gitignore에 terraform.tfvars가 등록되어 있는지 확인하세요!
+
+# -----------------------------------------------
+# Global
+# -----------------------------------------------
+project_name = "chilseongpa"
+environment  = "dev"
+
+# -----------------------------------------------
+# AWS
+# -----------------------------------------------
+aws_region          = "ap-northeast-2"
+vpc_cidr            = "10.20.0.0/16"
+public_subnet_cidr  = "10.20.1.0/24"
+availability_zone   = "ap-northeast-2a"
+allowed_ssh_cidr    = "0.0.0.0/0"   # 본인 IP/32 로 변경 권장 (예: "1.2.3.4/32")
+
+# AWS 콘솔에서 미리 생성한 Key Pair 이름
+key_name            = "your-key-pair-name"
+
+# EC2 인스턴스 타입
+instance_type            = "t3.small"   # k3s 노드
+bastion_type             = "t3.micro"   # Bastion Host
+root_volume_size         = 20           # k3s 노드 볼륨 (GB)
+monitoring_instance_type = "t3.small"   # Monitoring Server
+monitoring_volume_size   = 30           # Monitoring Server 볼륨 (GB)
+
+# -----------------------------------------------
+# GCP
+# -----------------------------------------------
+gcp_project_id     = "your-gcp-project-id"
+gcp_region         = "asia-northeast3"
+gcp_zone           = "asia-northeast3-a"
+gcp_db_password    = "your-db-password"
+gcp_credentials    = ""   # GCP Service Account JSON 내용 (GitHub Actions에서 주입)
+gcp_ssh_public_key = "ssh-ed25519 AAAA... ubuntu"   # ssh-keygen으로 생성한 공개키
+
+# -----------------------------------------------
+# Cloudflare
+# -----------------------------------------------
+cf_api_token     = "your-cloudflare-api-token"
+cf_account_id    = "your-cloudflare-account-id"
+cf_zone_id       = "your-cloudflare-zone-id"
+
+# 32바이트 이상의 임의 문자열 (터널 암호화용)
+# 예: openssl rand -base64 32 로 생성
+cf_tunnel_secret = "your-32-bytes-or-more-secret-string"
+
+# --- Service Domains ---
+app_domain        = "app.bucheongoyangijanggun.com"
+monitoring_domain = "status.bucheongoyangijanggun.com"

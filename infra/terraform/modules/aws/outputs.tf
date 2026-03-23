@@ -1,6 +1,5 @@
 # -----------------------------------------------
 # Network outputs
-# monitoring 모듈에서 vpc_id 참조용
 # -----------------------------------------------
 output "vpc_id" {
   description = "VPC ID"
@@ -20,9 +19,8 @@ output "public_subnet_id" {
 # -----------------------------------------------
 # Bastion outputs
 # -----------------------------------------------
-# 희정님 → Monitoring Server SG ingress에 등록
 output "bastion_sg_id" {
-  description = "Bastion SG ID → 희정님 Monitoring Server SG에 등록"
+  description = "Bastion SG ID"
   value       = aws_security_group.bastion.id
 }
 
@@ -59,4 +57,22 @@ output "k3s_ssh_command" {
 output "standby_security_group_id" {
   description = "k3s 노드 Security Group ID"
   value       = aws_security_group.k3s.id
+}
+
+# -----------------------------------------------
+# Monitoring Server outputs
+# -----------------------------------------------
+output "monitoring_public_ip" {
+  description = "Monitoring Server Public IP"
+  value       = aws_instance.monitoring.public_ip
+}
+
+output "monitoring_instance_id" {
+  description = "Monitoring Server EC2 Instance ID"
+  value       = aws_instance.monitoring.id
+}
+
+output "monitoring_sg_id" {
+  description = "Monitoring Server Security Group ID"
+  value       = aws_security_group.monitoring.id
 }

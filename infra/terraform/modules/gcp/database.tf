@@ -7,7 +7,7 @@
 resource "google_sql_database_instance" "primary_db" {
   name             = "hybrid-primary-db"
   database_version = "MYSQL_8_0" # 최신 MySQL 8.0 엔진 사용
-  region           = gcp_var.region
+  region           = var.gcp_region
 
   settings {
 
@@ -37,7 +37,7 @@ resource "google_sql_database_instance" "primary_db" {
 resource "google_sql_user" "root_user" {
   name     = "root"
   instance = google_sql_database_instance.primary_db.name
-  password = gcp_var.db_password # variables.tf에서 주입받은 비밀번호 사용
+  password = var.gcp_db_password # variables.tf에서 주입받은 비밀번호 사용
 }
 # ----------------------------------------------------------------
 # 👇 추가되는 부분: 백엔드 앱의 데이터가 정착할 '논리적 DB(방)' 공간 생성
