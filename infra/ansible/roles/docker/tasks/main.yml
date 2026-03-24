@@ -1,0 +1,79 @@
+---
+# 1. 기존 패키지 업데이트 및 필수 도구 설치
+- name: Install prerequisite packages
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - gnupg
+      - python3-pip
+      - python3-setuptools
+    state: present
+    update_cache: true
+
+# 2. 도커 공식 GPG 키 추가용 디렉토리 생성
+- name: Create directory for Docker GPG key
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+
+# 3. 도커 공식 GPG 키 다운로드
+- name: Add Docker GPG apt Key
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: '0644'
+
+# 4. 도커 공식 저장소(Repository) 추가
+- name: Add Docker Repository
+  ansible.builtin.apt_repository:
+    repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+    state: present
+    filename: docker
+
+# 5. 최신 도커 엔진 및 플러그인 설치
+- name: Install Docker CE and Plugins
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin  # 👈 이제 정상적으로 설치됩니다!
+    state: present
+    update_cache: true
+# - name: Install system packages
+#   ansible.builtin.apt:
+#     name:
+#       - docker.io                 # Docker Engine 설치 -> 구버전 우툰투에서 설치된다고함
+#       - docker-compose-plugin     # Docker Compose V2 plugin 설치 
+#       - python3-pip               # Python 패키지 설치 도구
+#       - python3-setuptools        # Python 패키지 빌드 지원
+#     state: present
+#     update_cache: true
+
+- name: Install docker python package
+  ansible.builtin.pip:
+    name:
+      - docker                    # community.docker 모듈 실행에 필요
+
+- name: Configure Docker log rotation
+  ansible.builtin.copy:
+    dest: /etc/docker/daemon.json
+    mode: '0644'
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+  notify: Restart Docker          # 설정 변경 시 Docker 재시작
+
+- name: Enable Docker
+  ansible.builtin.systemd:
+    name: docker
+    enabled: true                  # 재부팅 후 자동 시작
+    state: started                # 즉시 시작
