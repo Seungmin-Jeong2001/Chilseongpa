@@ -1,0 +1,5 @@
+- name: Reload Prometheus
+  ansible.builtin.uri:
+    url: "http://localhost:9090/-/reload"  # Prometheus Lifecycle API
+    method: POST
+    status_code: 200

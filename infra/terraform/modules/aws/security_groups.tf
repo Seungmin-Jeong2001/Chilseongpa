@@ -1,7 +1,7 @@
 # -----------------------------------------------
 # Bastion Host Security Group
 # -----------------------------------------------
-# 운영자 → Bastion → k3s 노드 / Monitoring Server 접근 경로
+# 운영자 → Bastion, k3s 노드 / Monitoring Server 접근 경로
 resource "aws_security_group" "bastion" {
   name        = "${var.project_name}-${var.environment}-bastion-sg"
   description = "Security group for Bastion Host"

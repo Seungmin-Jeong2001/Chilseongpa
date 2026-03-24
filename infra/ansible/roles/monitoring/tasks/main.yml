@@ -1,0 +1,152 @@
+- name: Create Prometheus data dir
+  ansible.builtin.file:
+    path: /var/lib/prometheus
+    state: directory              # Prometheus 데이터 저장 경로 생성
+    mode: '0755'
+  when: storage_setup_enabled | bool
+
+- name: Create Grafana data dir
+  ansible.builtin.file:
+    path: /var/lib/grafana
+    state: directory              # Grafana 데이터 저장 경로 생성
+    mode: '0755'
+  when: storage_setup_enabled | bool
+
+- name: Get UUID
+  ansible.builtin.command: blkid -s UUID -o value {{ ebs_device_name }}
+  register: monitoring_disk_uuid
+  failed_when: false
+  changed_when: false
+  when: storage_setup_enabled | bool
+
+- name: Format EBS volume
+  community.general.filesystem:
+    fstype: ext4
+    dev: "{{ ebs_device_name }}"  # 변수 기반 장치명 사용
+    force: false
+  when:
+    - storage_setup_enabled | bool
+    - monitoring_disk_uuid.stdout == ""    # 포맷되지 않은 경우만 수행
+
+- name: Get UUID after format
+  ansible.builtin.command: blkid -s UUID -o value {{ ebs_device_name }}
+  register: monitoring_disk_uuid             # 포맷 후 UUID 재조회
+  changed_when: false
+  when: storage_setup_enabled | bool
+
+- name: Mount EBS volume
+  ansible.posix.mount:
+    path: /var/lib/prometheus
+    src: "UUID={{ monitoring_disk_uuid.stdout }}"
+    fstype: ext4
+    state: mounted                # /etc/fstab 등록 + 즉시 마운트
+  when: storage_setup_enabled | bool
+
+- name: Set permissions for Prometheus data dir
+  ansible.builtin.file:
+    path: /var/lib/prometheus
+    owner: "65534"                # Prometheus 컨테이너 기본 UID
+    group: "65534"
+    mode: '0755'
+  when: storage_setup_enabled | bool
+
+- name: Set permissions for Grafana data dir
+  ansible.builtin.file:
+    path: /var/lib/grafana
+    owner: "472"                  # Grafana 컨테이너 기본 UID
+    group: "472"
+    mode: '0755'
+  when: storage_setup_enabled | bool
+
+- name: Create monitoring directory
+  ansible.builtin.file:
+    path: "{{ monitoring_base_dir }}"
+    state: directory
+    owner: "{{ ansible_user }}"   # 운영 사용자 기준 소유권 설정
+    group: "{{ ansible_user }}"
+    mode: '0755'
+
+- name: Render Prometheus config from template
+  ansible.builtin.template:
+    src: "{{ prometheus_config_src }}"
+    dest: "{{ monitoring_base_dir }}/prometheus.yml"
+    mode: '0644'
+  when: config_render_mode == "template"
+  notify: Reload Prometheus       # 설정 변경 시 무중단 reload
+
+- name: Copy Prometheus config from file
+  ansible.builtin.copy:
+    src: "{{ prometheus_config_src }}"
+    dest: "{{ monitoring_base_dir }}/prometheus.yml"
+    mode: '0644'
+  when: config_render_mode == "copy"
+  notify: Reload Prometheus
+
+- name: Render Alertmanager config
+  ansible.builtin.template:
+    src: "{{ alertmanager_config_src }}"
+    dest: "{{ monitoring_base_dir }}/alertmanager.yml"
+    mode: '0644'
+
+- name: Render Alert Rules
+  ansible.builtin.template:
+    src: "{{ alert_rules_src }}"
+    dest: "{{ monitoring_base_dir }}/alert.rules.yml"
+    mode: '0644'
+  notify: Reload Prometheus
+
+- name: Render docker-compose
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ monitoring_base_dir }}/docker-compose.yml"
+    mode: '0644'
+
+- name: Create Grafana provisioning directories
+  ansible.builtin.file:
+    path: "{{ monitoring_base_dir }}/grafana/provisioning/{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - datasources                 # datasource provisioning 경로
+    - dashboards                  # dashboard provider 경로
+    
+- name: Render Grafana datasource config from template
+  ansible.builtin.template:
+    src: "{{ grafana_datasource_src }}"
+    dest: "{{ monitoring_base_dir }}/grafana/provisioning/datasources/datasource.yml"
+    mode: '0644'
+  when: config_render_mode == "template"
+
+- name: Copy Grafana datasource config from file
+  ansible.builtin.copy:
+    src: "{{ grafana_datasource_src }}"
+    dest: "{{ monitoring_base_dir }}/grafana/provisioning/datasources/datasource.yml"
+    mode: '0644'
+  when: config_render_mode == "copy"
+
+- name: Render Grafana dashboard provider config from template
+  ansible.builtin.template:
+    src: "{{ grafana_dashboard_provider_src }}"
+    dest: "{{ monitoring_base_dir }}/grafana/provisioning/dashboards/dashboard.yml"
+    mode: '0644'
+  when: config_render_mode == "template"
+
+- name: Copy Grafana dashboard provider config from file
+  ansible.builtin.copy:
+    src: "{{ grafana_dashboard_provider_src }}"
+    dest: "{{ monitoring_base_dir }}/grafana/provisioning/dashboards/dashboard.yml"
+    mode: '0644'
+  when: config_render_mode == "copy"
+
+- name: Check docker CLI
+  ansible.builtin.command: docker --version
+  changed_when: false            # 상태 조회만 수행하므로 changed 처리하지 않음
+
+- name: Check docker compose plugin
+  ansible.builtin.command: docker compose version
+  changed_when: false            # Compose Plugin 설치 여부 확인용 조회 명령
+
+- name: Start monitoring stack
+  community.docker.docker_compose_v2:
+    project_src: "{{ monitoring_base_dir }}" # docker-compose.yml이 위치한 디렉토리
+    state: present               # docker compose up과 동일하게 서비스 생성/실행

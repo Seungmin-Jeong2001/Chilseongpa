@@ -1,0 +1,30 @@
+---
+# 모든 서버 공통 작업
+- name: "기본 환경 구성"
+  hosts: all
+  become: yes
+  roles:
+    - node-exporter
+
+# GCP 메인 서버 작업
+- name: "GCP 독립 K3s 구축"
+  hosts: gcp_main
+  become: yes
+  roles:
+    - k3s
+
+# AWS 서브 서버 작업
+- name: "AWS 독립 K3s 구축"
+  hosts: aws_sub
+  become: yes
+  roles:
+    - k3s
+
+# 모니터링 서버 작업
+- name: "모니터링 및 알림 센터 구축"
+  hosts: aws-monitor
+  become: yes
+  roles:
+    - docker
+    - monitoring
+   

@@ -87,9 +87,12 @@ variable "monitoring_volume_size" {
 # -----------------------------------------------
 # Cloudflare 터널 토큰 (cloudflare 모듈에서 전달받음)
 # -----------------------------------------------
-variable "tunnel_token" {
-  description = "Cloudflare Tunnel token for cloudflared Pod"
+variable "aws_tunnel_token" {
+  description = "AWS K3s용 터널 토큰"
   type        = string
-  sensitive   = true
-  default     = ""
+}
+
+variable "monitoring_tunnel_token" {
+  description = "Monitoring 서버용 터널 토큰"
+  type        = string
 }

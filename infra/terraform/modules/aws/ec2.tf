@@ -68,6 +68,13 @@ resource "aws_instance" "k3s" {
     Environment = var.environment
     Role        = "standby"
   }
+  user_data = <<-EOF
+    #!/bin/bash
+    curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+    dpkg -i cloudflared.deb
+    # 💡 Cloudflare 모듈에서 생성된 토큰 주입
+    cloudflared service install ${var.aws_tunnel_token}
+  EOF
 }
 
 # -----------------------------------------------
@@ -85,20 +92,23 @@ resource "aws_instance" "monitoring" {
   associate_public_ip_address = true
 
   # t3.small (2GB RAM) 환경에서 OOM 방지를 위해 Swap 구성
-  user_data = <<-EOF
-              #!/bin/bash
+user_data = <<-EOF
+    #!/bin/bash
+    # 1. Swap 구성 (기존 코드)
+    if [ ! -f /swapfile ]; then
+      fallocate -l 2G /swapfile
+      chmod 600 /swapfile
+      mkswap /swapfile
+      swapon /swapfile
+      grep -q '/swapfile none swap sw 0 0' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+    fi
 
-              # Swap 파일이 없을 때만 생성
-              if [ ! -f /swapfile ]; then
-                fallocate -l 2G /swapfile
-                chmod 600 /swapfile
-                mkswap /swapfile
-                swapon /swapfile
-              fi
+    # 2. 💡 Cloudflare Tunnel 설치 (추가)
+    curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+    dpkg -i cloudflared.deb
+    cloudflared service install ${var.monitoring_tunnel_token}
+  EOF
 
-              # 재부팅 시에도 Swap 유지
-              grep -q '/swapfile none swap sw 0 0' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
-              EOF
 
   root_block_device {
     volume_size           = var.monitoring_volume_size

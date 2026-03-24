@@ -14,3 +14,9 @@ output "db_proxy_sa_key" {
 }
 
 # 🗑️ monitoring_sa_key 부분은 Cloudflare Tunnel 도입으로 인해 완전히 삭제!
+
+output "db_instance_connection_name" {
+  description = "앤서블에서 사용할 Cloud SQL 연결 이름"
+  # 💡 리소스 이름이 'primary_db'이므로 아래와 같이 지정합니다.
+  value       = google_sql_database_instance.primary_db.connection_name
+}

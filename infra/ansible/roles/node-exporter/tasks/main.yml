@@ -1,0 +1,29 @@
+---
+# 1. Node Exporter 다운로드 및 압축 해제
+- name: Download and Unarchive Node Exporter
+  unarchive:
+    src: https://github.com/prometheus/node_exporter/releases/download/v1.7.0/node_exporter-1.7.0.linux-amd64.tar.gz
+    dest: /usr/local/bin
+    remote_src: yes
+    extra_opts: [--strip-components=1]
+
+# 2. systemd 서비스 등록 (서버 꺼져도 자동 실행되게)
+- name: Create Node Exporter systemd service
+  copy:
+    dest: /etc/systemd/system/node_exporter.service
+    content: |
+      [Unit]
+      Description=Node Exporter
+      [Service]
+      ExecStart=/usr/local/bin/node_exporter
+      Restart=always
+      [Install]
+      WantedBy=multi-user.target
+
+# 3. 서비스 시작 및 활성화
+- name: Start Node Exporter
+  systemd:
+    name: node_exporter
+    state: started
+    enabled: yes
+    daemon_reload: yes

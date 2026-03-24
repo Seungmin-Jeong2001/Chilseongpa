@@ -66,6 +66,7 @@ output "monitoring_public_ip" {
   description = "Monitoring Server Public IP"
   value       = aws_instance.monitoring.public_ip
 }
+output "monitoring_private_ip" { value = aws_instance.monitoring.private_ip }
 
 output "monitoring_instance_id" {
   description = "Monitoring Server EC2 Instance ID"

@@ -1,0 +1,17 @@
+---
+- name: K3s 설치 여부 확인 (중복 설치 방지)
+  command: which k3s
+  register: k3s_installed
+  ignore_errors: true
+  changed_when: false
+
+- name: K3s  설치 스크립트 다운로드 및 실행
+  shell: |
+    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --cluster-init" sh -
+  when: k3s_installed.rc != 0 # k3s가 없을 때만 실행
+
+- name: K3s 서비스가 정상적으로 실행 중인지 확인
+  systemd:
+    name: k3s
+    state: started
+    enabled: yes

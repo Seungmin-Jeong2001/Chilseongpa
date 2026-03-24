@@ -36,3 +36,11 @@ output "gcp_tunnel_id" {
 output "monitoring_tunnel_id" {
   value = cloudflare_zero_trust_tunnel_cloudflared.tunnels["monitoring"].id
 }
+output "cf_access_client_id" {
+  value = cloudflare_zero_trust_access_service_token.monitoring_token.client_id
+}
+
+output "cf_access_client_secret" {
+  value     = cloudflare_zero_trust_access_service_token.monitoring_token.client_secret
+  sensitive = true
+}
