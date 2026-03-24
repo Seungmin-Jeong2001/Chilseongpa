@@ -1,5 +1,7 @@
+# roles/monitoring/handlers/main.yml
 - name: Reload Prometheus
-  ansible.builtin.uri:
-    url: "http://localhost:9090/-/reload"  # Prometheus Lifecycle API
+  uri:
+    url: http://localhost:9090/-/reload
     method: POST
     status_code: 200
+  failed_when: false # 컨테이너가 막 뜨는 중일 때는 실패해도 무시
