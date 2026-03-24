@@ -65,10 +65,7 @@ scrape_configs:
   # =========================================================
   - job_name: 'gcp-backend'
     scheme: https
-    metrics_path: '/actuator/prometheus'
-    headers:
-      CF-Access-Client-Id: "{{ cf_client_id }}"         
-      CF-Access-Client-Secret: "{{ cf_client_secret }}" 
+    metrics_path: '/metrics'
     tls_config:
       insecure_skip_verify: true
     static_configs:
@@ -81,64 +78,32 @@ scrape_configs:
     metric_relabel_configs:
       # ── HTTP 요청 수 ──────────────────────────────────────
       - source_labels: [__name__]
-        regex: 'http_server_requests_seconds_count'
+        regex: 'http_requests_total'
         target_label: __name__
         replacement: 'backend_http_requests_total'
 
       # ── HTTP 응답 시간 ────────────────────────────────────
       - source_labels: [__name__]
-        regex: 'http_server_requests_seconds_sum'
+        regex: 'http_request_duration_seconds_sum'
         target_label: __name__
         replacement: 'backend_http_request_duration_seconds_sum'
 
       - source_labels: [__name__]
-        regex: 'http_server_requests_seconds_bucket'
+        regex: 'http_request_duration_seconds_bucket'
         target_label: __name__
         replacement: 'backend_http_request_duration_seconds_bucket'
 
-      # ── DB 연결 수 ────────────────────────────────────────
       - source_labels: [__name__]
-        regex: 'hikaricp_connections_active'
+        regex: 'http_request_duration_seconds_count'
         target_label: __name__
-        replacement: 'backend_db_connections_active'
-
-      - source_labels: [__name__]
-        regex: 'hikaricp_connections$'
-        target_label: __name__
-        replacement: 'backend_db_connections_total'
-
-      # ── JVM Memory ───────────────────────────────────────
-      - source_labels: [__name__]
-        regex: 'jvm_memory_used_bytes'
-        target_label: __name__
-        replacement: 'backend_jvm_memory_used_bytes'
-
-      - source_labels: [__name__]
-        regex: 'jvm_memory_max_bytes'
-        target_label: __name__
-        replacement: 'backend_jvm_memory_max_bytes'
-
-      # ── JVM GC ───────────────────────────────────────────
-      - source_labels: [__name__]
-        regex: 'jvm_gc_pause_seconds_count'
-        target_label: __name__
-        replacement: 'backend_jvm_gc_pause_total'
-
-      # ── CPU ──────────────────────────────────────────────
-      - source_labels: [__name__]
-        regex: 'process_cpu_usage'
-        target_label: __name__
-        replacement: 'backend_process_cpu_usage'
+        replacement: 'backend_http_request_duration_seconds_total'
 
   # =========================================================
-  # [GCP] Kubernetes Node 
+  # [GCP] Kubernetes Node - Cloudflare Zero Trust Tunnel 경유
   # =========================================================
   - job_name: 'gcp-kubernetes-nodes'
     scheme: https
     metrics_path: '/metrics'
-    headers:
-      CF-Access-Client-Id: "{{ cf_client_id }}"        
-      CF-Access-Client-Secret: "{{ cf_client_secret }}" 
     tls_config:
       insecure_skip_verify: true
     static_configs:
@@ -154,9 +119,6 @@ scrape_configs:
   - job_name: 'gcp-kubernetes-pods'
     scheme: https
     metrics_path: '/metrics'
-    headers:
-      CF-Access-Client-Id: "{{ cf_client_id }}"         
-      CF-Access-Client-Secret: "{{ cf_client_secret }}" 
     tls_config:
       insecure_skip_verify: true
     static_configs:
@@ -167,7 +129,7 @@ scrape_configs:
           environment: 'prod'
 
   # =========================================================
-  # [AWS] Kubernetes Node 
+  # [AWS] Kubernetes Node - Direct Scrape (Same VPC Private Subnet)
   # =========================================================
   - job_name: 'aws-kubernetes-nodes'
     scheme: https
@@ -214,15 +176,15 @@ scrape_configs:
       - source_labels: [__meta_kubernetes_pod_label_app]
         action: keep
         regex: '.*-service'
-      # /actuator/prometheus 경로 설정
+      # /metrics 경로 설정
       - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
         action: replace
         target_label: __metrics_path__
         regex: (.+)
         replacement: '${1}'
       - target_label: __metrics_path__
-        replacement: '/actuator/prometheus'
-      # Pod IP + 포트 조합
+        replacement: '/metrics'
+      # Pod IP + 포트 조합 (포트: 8000)
       - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
         action: replace
         regex: ([^:]+)(?::\d+)?;(\d+)
@@ -245,53 +207,27 @@ scrape_configs:
     # GCP와 동일한 Naming Convention 적용
     metric_relabel_configs:
       - source_labels: [__name__]
-        regex: 'http_server_requests_seconds_count'
+        regex: 'http_requests_total'
         target_label: __name__
         replacement: 'backend_http_requests_total'
 
       - source_labels: [__name__]
-        regex: 'http_server_requests_seconds_sum'
+        regex: 'http_request_duration_seconds_sum'
         target_label: __name__
         replacement: 'backend_http_request_duration_seconds_sum'
 
       - source_labels: [__name__]
-        regex: 'http_server_requests_seconds_bucket'
+        regex: 'http_request_duration_seconds_bucket'
         target_label: __name__
         replacement: 'backend_http_request_duration_seconds_bucket'
 
       - source_labels: [__name__]
-        regex: 'hikaricp_connections_active'
+        regex: 'http_request_duration_seconds_count'
         target_label: __name__
-        replacement: 'backend_db_connections_active'
-
-      - source_labels: [__name__]
-        regex: 'hikaricp_connections$'
-        target_label: __name__
-        replacement: 'backend_db_connections_total'
-
-      - source_labels: [__name__]
-        regex: 'jvm_memory_used_bytes'
-        target_label: __name__
-        replacement: 'backend_jvm_memory_used_bytes'
-
-      - source_labels: [__name__]
-        regex: 'jvm_memory_max_bytes'
-        target_label: __name__
-        replacement: 'backend_jvm_memory_max_bytes'
-
-      - source_labels: [__name__]
-        regex: 'jvm_gc_pause_seconds_count'
-        target_label: __name__
-        replacement: 'backend_jvm_gc_pause_total'
-
-      - source_labels: [__name__]
-        regex: 'process_cpu_usage'
-        target_label: __name__
-        replacement: 'backend_process_cpu_usage'
+        replacement: 'backend_http_request_duration_seconds_total'
 
   # =========================================================
   # [AWS] Kubernetes Pod - Direct Scrape (Same VPC Private Subnet)
-  # prometheus.io/scrape: "true" 어노테이션 기반 자동 수집
   # =========================================================
   - job_name: 'aws-kubernetes-pods'
     kubernetes_sd_configs:

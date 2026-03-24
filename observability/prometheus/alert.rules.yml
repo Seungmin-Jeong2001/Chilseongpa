@@ -2,8 +2,6 @@ groups:
 
   # -------------------------------------------------------
   # [Node Resource]
-  # Grafana: "Node CPU 사용률" / "Node Memory 사용률" 패널 기준
-  # 메트릭: node_cpu_seconds_total, node_memory_MemAvailable_bytes
   # -------------------------------------------------------
   - name: node-resource.rules
     rules:
@@ -37,7 +35,7 @@ groups:
           description: "CPU 사용률 {{ $value | humanizePercentage }} - 임계값 85% 초과"
 
       - alert: NodeMemoryUsageHigh
-
+        # Grafana 패널 쿼리와 동일한 수식
         expr: >
           1 - (
             node_memory_MemAvailable_bytes
@@ -88,6 +86,7 @@ groups:
   - name: pod-container.rules
     rules:
       - alert: PodFailedWarning
+        # Grafana stat 패널: count(kube_pod_status_phase{phase="Failed"}) 기준
         expr: >
           count by (cluster, namespace) (
             kube_pod_status_phase{phase="Failed"}
@@ -173,7 +172,6 @@ groups:
 
   # -------------------------------------------------------
   # [Cluster]
-  # Grafana: "Node Ready 수" stat 패널 기준
   # -------------------------------------------------------
   - name: cluster.rules
     rules:
@@ -198,6 +196,7 @@ groups:
   - name: target-down.rules
     rules:
       - alert: PrometheusTargetDown
+        # up == 0 : Prometheus가 해당 target scrape 실패
         expr: up == 0
         for: 1m
         labels:
@@ -210,11 +209,11 @@ groups:
 
   # -------------------------------------------------------
   # [Backend HTTP]
-  # Grafana: "HTTP Error Rate 추이" 패널 기준
   # -------------------------------------------------------
   - name: backend-http.rules
     rules:
       - alert: BackendHttp5xxErrorRateWarning
+        # Grafana 패널 쿼리와 동일한 수식
         expr: >
           sum by (cluster) (
             rate(backend_http_requests_total{status_code=~"5.."}[5m])
@@ -285,38 +284,3 @@ groups:
         annotations:
           summary: "backend 4xx 에러율 위험 ({{ $labels.cluster }})"
           description: "4xx 에러율 {{ $value | humanizePercentage }} - 임계값 10% 초과"
-
-  # -------------------------------------------------------
-  # [Backend JVM / DB]
-  # -------------------------------------------------------
-  - name: backend-resource.rules
-    rules:
-      - alert: BackendJvmMemoryUsageHigh
-        expr: >
-          backend_jvm_memory_used_bytes{area="heap"}
-          /
-          backend_jvm_memory_max_bytes{area="heap"}
-          > 0.80
-        for: 5m
-        labels:
-          severity: warning
-          category: application
-          root_hint: "memory_pressure"
-        annotations:
-          summary: "backend JVM Heap 사용률 높음 ({{ $labels.cluster }} / {{ $labels.pod }})"
-          description: "JVM Heap 사용률 {{ $value | humanizePercentage }} - 임계값 80% 초과"
-
-      - alert: BackendJvmMemoryUsageCritical
-        expr: >
-          backend_jvm_memory_used_bytes{area="heap"}
-          /
-          backend_jvm_memory_max_bytes{area="heap"}
-          > 0.90
-        for: 5m
-        labels:
-          severity: critical
-          category: application
-          root_hint: "memory_pressure"
-        annotations:
-          summary: "backend JVM Heap 사용률 위험 ({{ $labels.cluster }} / {{ $labels.pod }})"
-          description: "JVM Heap 사용률 {{ $value | humanizePercentage }} - OOM 위험"
