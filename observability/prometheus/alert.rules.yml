@@ -1,0 +1,322 @@
+groups:
+
+  # -------------------------------------------------------
+  # [Node Resource]
+  # Grafana: "Node CPU 사용률" / "Node Memory 사용률" 패널 기준
+  # 메트릭: node_cpu_seconds_total, node_memory_MemAvailable_bytes
+  # -------------------------------------------------------
+  - name: node-resource.rules
+    rules:
+      - alert: NodeCpuUsageHigh
+        # Grafana 패널 쿼리와 동일한 수식
+        expr: >
+          1 - avg by (cluster, instance) (
+            rate(node_cpu_seconds_total{mode="idle"}[5m])
+          ) > 0.70
+        for: 3m
+        labels:
+          severity: warning
+          category: resource
+          root_hint: "cpu_pressure"
+        annotations:
+          summary: "Node CPU 사용률 높음 ({{ $labels.cluster }} / {{ $labels.instance }})"
+          description: "CPU 사용률 {{ $value | humanizePercentage }} - 임계값 70% 초과"
+
+      - alert: NodeCpuUsageCritical
+        expr: >
+          1 - avg by (cluster, instance) (
+            rate(node_cpu_seconds_total{mode="idle"}[5m])
+          ) > 0.85
+        for: 3m
+        labels:
+          severity: critical
+          category: resource
+          root_hint: "cpu_pressure"
+        annotations:
+          summary: "Node CPU 사용률 위험 ({{ $labels.cluster }} / {{ $labels.instance }})"
+          description: "CPU 사용률 {{ $value | humanizePercentage }} - 임계값 85% 초과"
+
+      - alert: NodeMemoryUsageHigh
+
+        expr: >
+          1 - (
+            node_memory_MemAvailable_bytes
+            / node_memory_MemTotal_bytes
+          ) > 0.70
+        for: 3m
+        labels:
+          severity: warning
+          category: resource
+          root_hint: "memory_pressure"
+        annotations:
+          summary: "Node Memory 사용률 높음 ({{ $labels.cluster }} / {{ $labels.instance }})"
+          description: "Memory 사용률 {{ $value | humanizePercentage }} - 임계값 70% 초과"
+
+      - alert: NodeMemoryUsageCritical
+        expr: >
+          1 - (
+            node_memory_MemAvailable_bytes
+            / node_memory_MemTotal_bytes
+          ) > 0.85
+        for: 3m
+        labels:
+          severity: critical
+          category: resource
+          root_hint: "memory_pressure"
+        annotations:
+          summary: "Node Memory 사용률 위험 ({{ $labels.cluster }} / {{ $labels.instance }})"
+          description: "Memory 사용률 {{ $value | humanizePercentage }} - 임계값 85% 초과"
+
+      - alert: DiskSpaceLow
+        expr: >
+          (
+            node_filesystem_avail_bytes
+            / node_filesystem_size_bytes
+          ) < 0.15
+        for: 5m
+        labels:
+          severity: warning
+          category: resource
+          root_hint: "disk_pressure"
+        annotations:
+          summary: "Disk 여유 공간 부족 ({{ $labels.cluster }} / {{ $labels.instance }})"
+          description: "Disk 여유 공간 {{ $value | humanizePercentage }} - 15% 미만"
+
+  # -------------------------------------------------------
+  # [Pod / Container]
+  # -------------------------------------------------------
+  - name: pod-container.rules
+    rules:
+      - alert: PodFailedWarning
+        expr: >
+          count by (cluster, namespace) (
+            kube_pod_status_phase{phase="Failed"}
+          ) >= 1
+        for: 1m
+        labels:
+          severity: warning
+          category: application
+          root_hint: "pod_failed"
+        annotations:
+          summary: "Failed Pod 감지 ({{ $labels.cluster }} / {{ $labels.namespace }})"
+          description: "Failed Pod {{ $value }}개"
+
+      - alert: PodFailedCritical
+        expr: >
+          count by (cluster, namespace) (
+            kube_pod_status_phase{phase="Failed"}
+          ) >= 3
+        for: 1m
+        labels:
+          severity: critical
+          category: application
+          root_hint: "pod_failed"
+        annotations:
+          summary: "Failed Pod 다수 발생 ({{ $labels.cluster }} / {{ $labels.namespace }})"
+          description: "Failed Pod {{ $value }}개 - 서비스 영향 가능"
+
+      - alert: PodPendingWarning
+        expr: >
+          count by (cluster, namespace) (
+            kube_pod_status_phase{phase="Pending"}
+          ) >= 1
+        for: 3m
+        labels:
+          severity: warning
+          category: application
+          root_hint: "pod_pending"
+        annotations:
+          summary: "Pending Pod 감지 ({{ $labels.cluster }} / {{ $labels.namespace }})"
+          description: "Pending Pod {{ $value }}개 - 스케줄링 문제 가능성"
+
+      - alert: PodPendingCritical
+        expr: >
+          count by (cluster, namespace) (
+            kube_pod_status_phase{phase="Pending"}
+          ) >= 3
+        for: 3m
+        labels:
+          severity: critical
+          category: application
+          root_hint: "pod_pending"
+        annotations:
+          summary: "Pending Pod 다수 ({{ $labels.cluster }} / {{ $labels.namespace }})"
+          description: "Pending Pod {{ $value }}개 - 리소스 부족 또는 스케줄러 이상"
+
+      - alert: ContainerRestartWarning
+        expr: >
+          increase(
+            kube_pod_container_status_restarts_total[5m]
+          ) >= 1
+        for: 0m
+        labels:
+          severity: warning
+          category: application
+          root_hint: "container_restart"
+        annotations:
+          summary: "Container 재시작 감지 ({{ $labels.cluster }} / {{ $labels.pod }})"
+          description: "최근 5분간 {{ $value }}회 재시작"
+
+      - alert: ContainerRestartCritical
+        expr: >
+          increase(
+            kube_pod_container_status_restarts_total[5m]
+          ) >= 5
+        for: 0m
+        labels:
+          severity: critical
+          category: application
+          root_hint: "container_restart"
+        annotations:
+          summary: "Container 반복 재시작 위험 ({{ $labels.cluster }} / {{ $labels.pod }})"
+          description: "최근 5분간 {{ $value }}회 재시작 - CrashLoopBackOff 가능성"
+
+  # -------------------------------------------------------
+  # [Cluster]
+  # Grafana: "Node Ready 수" stat 패널 기준
+  # -------------------------------------------------------
+  - name: cluster.rules
+    rules:
+      - alert: NodeNotReady
+        expr: >
+          kube_node_status_condition{
+            condition="Ready",
+            status="true"
+          } == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: infra
+          root_hint: "instance_unreachable"
+        annotations:
+          summary: "Node NotReady ({{ $labels.cluster }} / {{ $labels.node }})"
+          description: "{{ $labels.node }} 노드가 2분 이상 NotReady 상태"
+
+  # -------------------------------------------------------
+  # [Target Down]
+  # -------------------------------------------------------
+  - name: target-down.rules
+    rules:
+      - alert: PrometheusTargetDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: infra
+          root_hint: "instance_unreachable"
+        annotations:
+          summary: "Prometheus Target Down ({{ $labels.cluster }} / {{ $labels.instance }})"
+          description: "{{ $labels.job }} / {{ $labels.instance }} scrape 실패 - 1분 이상 Target Down"
+
+  # -------------------------------------------------------
+  # [Backend HTTP]
+  # Grafana: "HTTP Error Rate 추이" 패널 기준
+  # -------------------------------------------------------
+  - name: backend-http.rules
+    rules:
+      - alert: BackendHttp5xxErrorRateWarning
+        expr: >
+          sum by (cluster) (
+            rate(backend_http_requests_total{status_code=~"5.."}[5m])
+          )
+          /
+          sum by (cluster) (
+            rate(backend_http_requests_total[5m])
+          ) > 0.01
+        for: 2m
+        labels:
+          severity: warning
+          category: application
+          root_hint: "http_error"
+        annotations:
+          summary: "backend 5xx 에러율 높음 ({{ $labels.cluster }})"
+          description: "5xx 에러율 {{ $value | humanizePercentage }} - 임계값 1% 초과"
+
+      - alert: BackendHttp5xxErrorRateCritical
+        expr: >
+          sum by (cluster) (
+            rate(backend_http_requests_total{status_code=~"5.."}[5m])
+          )
+          /
+          sum by (cluster) (
+            rate(backend_http_requests_total[5m])
+          ) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          category: application
+          root_hint: "http_error"
+        annotations:
+          summary: "backend 5xx 에러율 위험 ({{ $labels.cluster }})"
+          description: "5xx 에러율 {{ $value | humanizePercentage }} - 임계값 5% 초과"
+
+      - alert: BackendHttp4xxErrorRateWarning
+        expr: >
+          sum by (cluster) (
+            rate(backend_http_requests_total{status_code=~"4.."}[5m])
+          )
+          /
+          sum by (cluster) (
+            rate(backend_http_requests_total[5m])
+          ) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+          category: application
+          root_hint: "http_error"
+        annotations:
+          summary: "backend 4xx 에러율 높음 ({{ $labels.cluster }})"
+          description: "4xx 에러율 {{ $value | humanizePercentage }} - 임계값 5% 초과"
+
+      - alert: BackendHttp4xxErrorRateCritical
+        expr: >
+          sum by (cluster) (
+            rate(backend_http_requests_total{status_code=~"4.."}[5m])
+          )
+          /
+          sum by (cluster) (
+            rate(backend_http_requests_total[5m])
+          ) > 0.10
+        for: 2m
+        labels:
+          severity: critical
+          category: application
+          root_hint: "http_error"
+        annotations:
+          summary: "backend 4xx 에러율 위험 ({{ $labels.cluster }})"
+          description: "4xx 에러율 {{ $value | humanizePercentage }} - 임계값 10% 초과"
+
+  # -------------------------------------------------------
+  # [Backend JVM / DB]
+  # -------------------------------------------------------
+  - name: backend-resource.rules
+    rules:
+      - alert: BackendJvmMemoryUsageHigh
+        expr: >
+          backend_jvm_memory_used_bytes{area="heap"}
+          /
+          backend_jvm_memory_max_bytes{area="heap"}
+          > 0.80
+        for: 5m
+        labels:
+          severity: warning
+          category: application
+          root_hint: "memory_pressure"
+        annotations:
+          summary: "backend JVM Heap 사용률 높음 ({{ $labels.cluster }} / {{ $labels.pod }})"
+          description: "JVM Heap 사용률 {{ $value | humanizePercentage }} - 임계값 80% 초과"
+
+      - alert: BackendJvmMemoryUsageCritical
+        expr: >
+          backend_jvm_memory_used_bytes{area="heap"}
+          /
+          backend_jvm_memory_max_bytes{area="heap"}
+          > 0.90
+        for: 5m
+        labels:
+          severity: critical
+          category: application
+          root_hint: "memory_pressure"
+        annotations:
+          summary: "backend JVM Heap 사용률 위험 ({{ $labels.cluster }} / {{ $labels.pod }})"
+          description: "JVM Heap 사용률 {{ $value | humanizePercentage }} - OOM 위험"
