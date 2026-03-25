@@ -1,72 +1,203 @@
-앤서블 실행 중 생긴 오류 해결용
+# -----------------------------------------------
+# Bastion Host Security Group
+# -----------------------------------------------
+# 운영자 → Bastion, k3s 노드 / Monitoring Server 접근 경로
+resource "aws_security_group" "bastion" {
+  name        = "${var.project_name}-${var.environment}-bastion-sg"
+  description = "Security group for Bastion Host"
+  vpc_id      = aws_vpc.main.id
 
+  # SSH - 운영자 IP만 허용
+  ingress {
+    description = "SSH from operator"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [var.allowed_ssh_cidr]
+  }
 
+  # 아웃바운드 전체 허용
+  egress {
+    description = "Allow all outbound"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 
+  tags = {
+    Name        = "${var.project_name}-${var.environment}-bastion-sg"
+    Project     = var.project_name
+    Environment = var.environment
+    Role        = "bastion"
+  }
+}
 
-1. storage_setup_enabled 설정, 어떻게 할까?
-이 설정은 **"운영체제가 설치된 기본 디스크 외에, 데이터를 저장할 별도의 '빈 디스크(EBS)'를 추가로 달았는가?"**에 따라 결정됩니다.
+# -----------------------------------------------
+# k3s 노드 Security Group
+# -----------------------------------------------
+# Cloudflare Tunnel 방식 → 인바운드 80/443 불필요
+# cloudflared가 아웃바운드로 Cloudflare에 연결
+resource "aws_security_group" "k3s" {
+  name        = "${var.project_name}-${var.environment}-k3s-sg"
+  description = "Security group for k3s Standby Node"
+  vpc_id      = aws_vpc.main.id
 
-false로 설정해야 하는 경우 (추천)
+  # SSH - 운영자 IP만 허용
+  ingress {
+    description = "SSH from operator"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [aws_security_group.bastion.id]
+  }
 
-따로 EBS 볼륨을 추가하지 않고, 그냥 서버 기본 용량(보통 8GB~20GB) 안에 도커와 DB를 다 때려 넣을 때.
+  # Kubernetes API - kubectl / CI-CD 배포용
+  ingress {
+    description = "Kubernetes API Server from operator"
+    from_port   = 6443
+    to_port     = 6443
+    protocol    = "tcp"
+    cidr_blocks = [aws_security_group.bastion.id]
+  }
 
-연습용이거나 복잡한 마운트 과정 없이 빠르게 띄우고 싶을 때.
+  # Node Exporter - Prometheus 메트릭 수집
+  # Monitoring Server와 같은 VPC 내에 있으므로 VPC CIDR로 제한
+  ingress {
+    description = "Node Exporter for Prometheus"
+    from_port   = 9100
+    to_port     = 9100
+    protocol    = "tcp"
+    cidr_blocks = [aws_security_group.bastion.id]
+  }
 
-결과: /var/lib/prometheus 폴더를 만들긴 하지만, 별도 디스크 포맷/마운트 과정을 건너뜁니다.
+  # VPC 내부 통신
+  ingress {
+    description = "Internal VPC traffic"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = [aws_security_group.bastion.id]
+  }
 
-true로 설정해야 하는 경우
+  # 아웃바운드 전체 허용
+  # cloudflared → Cloudflare 터널 연결
+  # GCP Cloud SQL 접근
+  # 패키지 설치 등
+  egress {
+    description = "Allow all outbound"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 
-테라폼에서 aws_ebs_volume을 만들고 aws_volume_attachment로 서버에 연결했을 때.
+  tags = {
+    Name        = "${var.project_name}-${var.environment}-k3s-sg"
+    Project     = var.project_name
+    Environment = var.environment
+    Role        = "k3s-standby"
+  }
+}
 
-서버가 삭제되어도 프로메테우스의 데이터(로그, 메트릭)는 남기고 싶을 때.
+# -----------------------------------------------
+# Monitoring Server Security Group
+# -----------------------------------------------
+# Bastion을 통해서만 접근 허용
+# Prometheus outbound로 메트릭 수집 (inbound 불필요)
+resource "aws_security_group" "monitoring" {
+  name        = "${var.project_name}-${var.environment}-monitoring-sg"
+  description = "Security group for Monitoring Server"
+  vpc_id      = aws_vpc.main.id
 
-결론: 현재 단계에서는 일단 **false**로 두고 앤서블을 돌리는 게 속 편합니다. 나중에 용량이 부족해지면 그때 디스크를 붙이고 true로 바꿔도 늦지 않아요.
+  # SSH - Bastion SG에서만 허용
+  ingress {
+    description     = "Admin SSH access via Bastion"
+    from_port       = 22
+    to_port         = 22
+    protocol        = "tcp"
+    security_groups = [aws_security_group.bastion.id]
+  }
 
-2. AWS 인스턴스 타입과 장치명 확인법
-앤서블이 실행 중인 상태에서 확인하거나, 직접 서버에 들어가서 확인하는 방법이 있습니다.
+  # Grafana UI - Bastion SG에서만 허용
+  ingress {
+    description     = "Grafana UI"
+    from_port       = 3000
+    to_port         = 3000
+    protocol        = "tcp"
+    security_groups = [aws_security_group.bastion.id]
+  }
 
-① 서버에 접속해서 직접 확인 (가장 확실함)
-AWS 인스턴스 타입에 따라 디스크 장치명이 달라집니다. aws-monitor 서버에 SSH로 접속해서 아래 명령어를 쳐보세요.
+  # Prometheus UI - Bastion SG에서만 허용
+  ingress {
+    description     = "Prometheus UI"
+    from_port       = 9090
+    to_port         = 9090
+    protocol        = "tcp"
+    security_groups = [aws_security_group.bastion.id]
+  }
 
-Bash
-# 1. 인스턴스 타입 확인
-curl -s http://169.254.169.254/latest/meta-data/instance-type
-# 결과 예: t2.micro, t3.small 등
+  # Alertmanager UI - Bastion SG에서만 허용
+  ingress {
+    description     = "Alertmanager UI"
+    from_port       = 9093
+    to_port         = 9093
+    protocol        = "tcp"
+    security_groups = [aws_security_group.bastion.id]
+  }
 
-# 2. 연결된 디스크 목록 확인
-lsblk
-② 인스턴스 타입별 장치명 규칙
-t2 시리즈 (구형): 주로 /dev/sdb, /dev/sdc 등으로 잡힙니다.
+  # 아웃바운드 전체 허용
+  # Prometheus → Node Exporter scrape
+  # cloudflared → Cloudflare 터널 연결
+  egress {
+    description = "Allow all outbound"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 
-t3 시리즈 이상 (신형/NVMe): /dev/nvme1n1, /dev/nvme2n1 식으로 잡힙니다.
+  tags = {
+    Name        = "${var.project_name}-${var.environment}-monitoring-sg"
+    Project     = var.project_name
+    Environment = var.environment
+    Role        = "monitoring"
+  }
+}
 
-🛠️ 적용 가이드 (all.yml 수정)
-현재 에러를 해결하기 위해 group_vars/all.yml을 아래와 같이 업데이트하세요. 봇 관련 설정은 나중에 하더라도 변수 자리는 만들어 두는 게 에러 방지에 좋습니다.
+##위와 같이 대충 바꿧더니 오류 생겼습니다
 
-YAML
-# storage_setup_enabled를 false로 두면 아래 ebs_device_name은 무시됩니다.
-storage_setup_enabled: false  
-ebs_device_name: "/dev/xvdf" # 만약 나중에 장치명이 확인되면 수정
-
-# 모니터링 기본 디렉토리
-monitoring_base_dir: "/home/{{ ansible_user }}/monitoring"
-
-# 렌더링 모드 설정 (에러 방지용)
-config_render_mode: "template"
-prometheus_config_src: "prometheus.yml.j2"
-alertmanager_config_src: "alertmanager.yml.j2"
-alert_rules_src: "alert.rules.yml.j2"
-grafana_datasource_src: "datasource.yml.j2"
-grafana_dashboard_provider_src: "dashboard.yml.j2"
-
-# 디스코드 관련 (나중을 위해 일단 빈값이나 환경변수 처리)
-discord_bot_token: "{{ lookup('env', 'DISCORD_BOT_TOKEN') | default('dummy') }}"
-gemini_api_key: "{{ lookup('env', 'GEMINI_API_KEY') | default('dummy') }}"
-✅ 이제 이렇게 해보세요
-**group_vars/all.yml**에 위 변수들을 복사해 넣는다. (특히 storage_setup_enabled: false)
-
-**ansible-playbook playbook.yml**을 다시 실행한다.
-
-이렇게 하면 아까 멈췄던 Create Prometheus data dir 단계를 가볍게 넘어가고, 도커 위에 모니터링 스택이 올라가기 시작할 겁니다.
-
-"변수 업데이트 후에 플레이북을 다시 돌려보시겠어요? 설치가 끝나면 브라우저에서 그라파나 로그인이 되는지 바로 확인해 봅시다!"
+module.gcp.google_sql_user.root_user: Creation complete after 1s [id=root//hybrid-primary-db]
+╷
+│ Error: "sg-03d5c7e7ed39fb3bb" is not a valid CIDR block: invalid CIDR address: sg-03d5c7e7ed39fb3bb
+│ 
+│   with module.aws.aws_security_group.k3s,
+│   on modules/aws/security_groups.tf line 41, in resource "aws_security_group" "k3s":
+│   41: resource "aws_security_group" "k3s" {
+│ 
+╵
+╷
+│ Error: "sg-03d5c7e7ed39fb3bb" is not a valid CIDR block: invalid CIDR address: sg-03d5c7e7ed39fb3bb
+│ 
+│   with module.aws.aws_security_group.k3s,
+│   on modules/aws/security_groups.tf line 41, in resource "aws_security_group" "k3s":
+│   41: resource "aws_security_group" "k3s" {
+│ 
+╵
+╷
+│ Error: "sg-03d5c7e7ed39fb3bb" is not a valid CIDR block: invalid CIDR address: sg-03d5c7e7ed39fb3bb
+│ 
+│   with module.aws.aws_security_group.k3s,
+│   on modules/aws/security_groups.tf line 41, in resource "aws_security_group" "k3s":
+│   41: resource "aws_security_group" "k3s" {
+│ 
+╵
+╷
+│ Error: "sg-03d5c7e7ed39fb3bb" is not a valid CIDR block: invalid CIDR address: sg-03d5c7e7ed39fb3bb
+│ 
+│   with module.aws.aws_security_group.k3s,
+│   on modules/aws/security_groups.tf line 41, in resource "aws_security_group" "k3s":
+│   41: resource "aws_security_group" "k3s" {
+│ 
+╵
+jeong@DESKTOP-G4U9APQ:~/github/Chilseongpa/infra/terraform$ ^C
