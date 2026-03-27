@@ -21,7 +21,7 @@ availability_zone   = "ap-northeast-2a"
 allowed_ssh_cidr    = "0.0.0.0/0"   # 본인 IP/32 로 변경 권장 (예: "1.2.3.4/32")
 
 # AWS 콘솔에서 미리 생성한 Key Pair 이름
-key_name            = "your-key-pair-name"
+key_name            = "chilseongpa_keypair"
 
 # EC2 인스턴스 타입
 instance_type            = "t3.small"   # k3s 노드

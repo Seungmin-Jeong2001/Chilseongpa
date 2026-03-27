@@ -150,3 +150,20 @@
   community.docker.docker_compose_v2:
     project_src: "{{ monitoring_base_dir }}" # docker-compose.yml이 위치한 디렉토리
     state: present               # docker compose up과 동일하게 서비스 생성/실행
+- name: 봇 소스코드 디렉토리 생성
+  ansible.builtin.file:
+    path: "{{ monitoring_base_dir }}/aiops"
+    state: directory
+    mode: '0755'
+
+- name: 봇 소스코드 배포 (bot.py)
+  ansible.builtin.copy:
+    src: "../../aiops/bot.py"
+    dest: "{{ monitoring_base_dir }}/aiops/bot.py"
+    mode: '0644'
+
+- name: 봇 실행을 위한 Requirements 배포
+  ansible.builtin.copy:
+    src: "../../aiops/requirements.txt"
+    dest: "{{ monitoring_base_dir }}/aiops/requirements.txt"
+    mode: '0644'

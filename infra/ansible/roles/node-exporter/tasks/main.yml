@@ -1,27 +1,48 @@
 ---
-# 1. Node Exporter 다운로드 및 압축 해제
+# 1. Node Exporter 설치 여부 확인 (중복 설치 방지)
+- name: Check if Node Exporter is already installed
+  stat:
+    path: /usr/local/bin/node_exporter
+  register: node_exporter_installed
+
+# 2. Node Exporter 다운로드 및 압축 해제
 - name: Download and Unarchive Node Exporter
   unarchive:
     src: https://github.com/prometheus/node_exporter/releases/download/v1.7.0/node_exporter-1.7.0.linux-amd64.tar.gz
-    dest: /usr/local/bin
+    dest: /tmp
     remote_src: yes
     extra_opts: [--strip-components=1]
+  when: not node_exporter_installed.stat.exists
 
-# 2. systemd 서비스 등록 (서버 꺼져도 자동 실행되게)
+# 3. 바이너리 복사
+- name: Copy Node Exporter binary
+  copy:
+    src: /tmp/node_exporter
+    dest: /usr/local/bin/node_exporter
+    mode: '0755'
+    remote_src: yes
+  when: not node_exporter_installed.stat.exists
+
+# 4. systemd 서비스 등록
 - name: Create Node Exporter systemd service
   copy:
     dest: /etc/systemd/system/node_exporter.service
     content: |
       [Unit]
       Description=Node Exporter
+      After=network.target
+
       [Service]
+      User=nobody
       ExecStart=/usr/local/bin/node_exporter
       Restart=always
+      RestartSec=5
+
       [Install]
       WantedBy=multi-user.target
 
-# 3. 서비스 시작 및 활성화
-- name: Start Node Exporter
+# 5. 서비스 시작 및 활성화
+- name: Start and enable Node Exporter
   systemd:
     name: node_exporter
     state: started

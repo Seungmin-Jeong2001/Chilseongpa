@@ -36,3 +36,22 @@ services:
     ports:
       - "9093:9093"
     restart: always
+
+  alert-bot:
+    build:
+      context: ../../aiops  # 앤서블이 빌드할 위치 또는 이미지를 미리 만들어뒀다면 image 사용
+    image: chilseongpa-bot:latest
+    container_name: chilseongpa-bot
+    restart: always
+    environment:
+      - DISCORD_BOT_TOKEN={{ discord_bot_token }}
+      - GEMINI_API_KEY={{ gemini_api_key }}
+      - DISCORD_CHANNEL_ID={{ discord_channel_id }}
+    ports:
+      - "5000:5000"
+    networks:
+      - monitoring-network
+
+networks:
+  monitoring-network:
+    driver: bridge
