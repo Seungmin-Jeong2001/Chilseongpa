@@ -1,12 +1,54 @@
+global:
+  resolve_timeout: 5m
+
 route:
-  group_by: ['alertname', 'severity', 'category']  # 유사 알림 그룹화 기준
-  group_wait: 30s                                  # 첫 알림 대기 시간
-  group_interval: 5m                               # 그룹 재전송 간격
-  repeat_interval: 12h                             # 반복 알림 간격
+  group_by: ['alertname', 'severity', 'category', 'cluster']  # 유사 알림 그룹화 기준
+  group_wait: 30s                                              # 첫 알림 대기 시간
+  group_interval: 5m                                           # 그룹 재전송 간격
+  repeat_interval: 12h                                         # 반복 알림 간격
   receiver: webhook
+
+  routes:
+    # application 카테고리: severity보다 먼저 평가
+    - match:
+        category: application
+      receiver: webhook
+      group_by: ['alertname', 'cluster', 'severity', 'category']
+      routes:
+        - match:
+            severity: critical
+          receiver: webhook-critical
+          group_wait: 10s
+          repeat_interval: 15m
+
+    # critical: 즉시 전달, 15분마다 반복
+    - match:
+        severity: critical
+      receiver: webhook-critical
+      group_wait: 10s
+      repeat_interval: 15m
+
+    # warning: 기본 라우팅
+    - match:
+        severity: warning
+      receiver: webhook
+      repeat_interval: 12h
+
+# critical 발생 시 동일 cluster/category warning 억제
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'cluster', 'category']
 
 receivers:
   - name: webhook
     webhook_configs:
-      - url: "{{ alert_webhook_url }}"             # Discord Webhook 주소
-        send_resolved: true                        # resolved 상태도 전송
+      - url: "{{ alert_webhook_url }}"   # Discord Webhook 주소
+        send_resolved: true              # resolved 상태도 전송
+
+  - name: webhook-critical
+    webhook_configs:
+      - url: "{{ alert_webhook_url }}"   # Discord Webhook 주소
+        send_resolved: true
