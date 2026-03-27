@@ -1,6 +1,10 @@
 global:
   scrape_interval: 15s
+  scrape_timeout: 10s
   evaluation_interval: 15s
+  external_labels:
+    monitor: 'aws-prometheus'
+    environment: 'prod'
 
 rule_files:
   - "/etc/prometheus/alert.rules.yml"
@@ -12,20 +16,117 @@ alerting:
             - alertmanager:9093
 
 scrape_configs:
-  - job_name: 'chiseongpa-nodes'
-    scheme: https
-    # 💡 Cloudflare Access를 통과하기 위한 '출입증' 제시
-    headers:
-      CF-Access-Client-Id: "{{ cf_client_id }}"
-      CF-Access-Client-Secret: "{{ cf_client_secret }}"
-    
-    static_configs:
-      - targets:
-          # 💡 테라폼에서 생성한 GCP 메트릭용 도메인
-          - "gcp-metrics.{{ app_domain }}"
-          # 💡 만약 AWS 서브 서버도 도메인을 설정했다면 추가
-          - "aws-metrics.{{ app_domain }}"
 
   - job_name: 'prometheus'
     static_configs:
       - targets: ['localhost:9090']
+
+  # 💡 GCP Cloud SQL 메트릭 수집
+  # GCP Monitoring API → stackdriver-exporter → Prometheus
+  - job_name: 'gcp-cloudsql'
+    static_configs:
+      - targets: ['localhost:9255']
+        labels:
+          cluster: 'gcp'
+          service: 'cloudsql'
+          environment: 'prod'
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'stackdriver_cloudsql_googleapis_com_database_cpu_utilization'
+        target_label: __name__
+        replacement: 'cloudsql_cpu_utilization'
+
+      - source_labels: [__name__]
+        regex: 'stackdriver_cloudsql_googleapis_com_database_memory_usage'
+        target_label: __name__
+        replacement: 'cloudsql_memory_used_bytes'
+
+      - source_labels: [__name__]
+        regex: 'stackdriver_cloudsql_googleapis_com_database_network_connections'
+        target_label: __name__
+        replacement: 'cloudsql_network_connections_total'
+
+      - source_labels: [__name__]
+        regex: 'stackdriver_cloudsql_googleapis_com_database_disk_bytes_used'
+        target_label: __name__
+        replacement: 'cloudsql_disk_used_bytes'
+
+  # 💡 GCP App /metrics + Node Exporter
+  - job_name: 'gcp-metrics'
+    scheme: https
+    metrics_path: '/metrics'
+    tls_config:
+      insecure_skip_verify: true
+    static_configs:
+      - targets:
+          - "gcp-metrics.{{ app_domain }}"
+        labels:
+          cluster: 'gcp'
+          environment: 'prod'
+    metric_relabel_configs:
+      # ── HTTP 요청 수 ──────────────────────────────────────
+      - source_labels: [__name__]
+        regex: 'http_requests_total'
+        target_label: __name__
+        replacement: 'backend_http_requests_total'
+
+      # ── HTTP 응답 시간 ────────────────────────────────────
+      - source_labels: [__name__]
+        regex: 'http_request_duration_seconds_sum'
+        target_label: __name__
+        replacement: 'backend_http_request_duration_seconds_sum'
+
+      - source_labels: [__name__]
+        regex: 'http_request_duration_seconds_bucket'
+        target_label: __name__
+        replacement: 'backend_http_request_duration_seconds_bucket'
+
+      - source_labels: [__name__]
+        regex: 'http_request_duration_seconds_count'
+        target_label: __name__
+        replacement: 'backend_http_request_duration_seconds_total'
+
+  # 💡 AWS App /metrics + Node Exporter
+  # Same VPC Direct Scrape
+  # App /metrics 포트: 8000
+  # Node Exporter 포트: 9100
+  - job_name: 'aws-app-metrics'
+    scheme: http
+    metrics_path: '/metrics'
+    static_configs:
+      - targets:
+          - "{{ aws_k3s_private_ip }}:8000"
+        labels:
+          cluster: 'aws'
+          service: 'backend'
+          environment: 'prod'
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'http_requests_total'
+        target_label: __name__
+        replacement: 'backend_http_requests_total'
+
+      - source_labels: [__name__]
+        regex: 'http_request_duration_seconds_sum'
+        target_label: __name__
+        replacement: 'backend_http_request_duration_seconds_sum'
+
+      - source_labels: [__name__]
+        regex: 'http_request_duration_seconds_bucket'
+        target_label: __name__
+        replacement: 'backend_http_request_duration_seconds_bucket'
+
+      - source_labels: [__name__]
+        regex: 'http_request_duration_seconds_count'
+        target_label: __name__
+        replacement: 'backend_http_request_duration_seconds_total'
+
+  - job_name: 'aws-node-exporter'
+    scheme: http
+    metrics_path: '/metrics'
+    static_configs:
+      - targets:
+          - "{{ aws_k3s_private_ip }}:9100"
+        labels:
+          cluster: 'aws'
+          environment: 'prod'
