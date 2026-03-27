@@ -1,0 +1,9 @@
+- name: Build and push Discord Bot
+  uses: docker/build-push-action@v5
+  with:
+    context: ./aiops/discord-bot
+    push: true
+    # 💡 시크릿을 조합하여 태그를 만듭니다.
+    tags: |
+      ${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKERHUB_REPO_BOT }}:latest
+      ${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKERHUB_REPO_BOT }}:${{ github.sha }}
