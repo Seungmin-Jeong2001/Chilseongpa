@@ -21,6 +21,10 @@ services:
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
+    # [수정] depends_on 추가 - Grafana가 Prometheus보다 먼저 뜨면 datasource 연결 실패
+    depends_on:
+      - prometheus
+      - alertmanager
     volumes:
       - {{ storage_setup_enabled | ternary('/var/lib/grafana', './data/grafana') }}:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning

@@ -5,3 +5,10 @@
     method: POST
     status_code: 200
   failed_when: false # 컨테이너가 막 뜨는 중일 때는 실패해도 무시
+
+- name: Reload Alertmanager
+  uri:
+    url: http://localhost:9093/-/reload
+    method: POST
+    status_code: 200
+  failed_when: false
