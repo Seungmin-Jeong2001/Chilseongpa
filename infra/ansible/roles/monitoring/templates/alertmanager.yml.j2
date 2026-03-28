@@ -40,7 +40,8 @@ inhibit_rules:
       severity: 'critical'
     target_match:
       severity: 'warning'
-    equal: ['alertname', 'cluster', 'category']
+    # [수정] alertname 제거 → warning/critical 쌍은 alertname이 달라 억제 불가
+    equal: ['root_hint', 'cluster', 'category']
 
 receivers:
   - name: webhook
