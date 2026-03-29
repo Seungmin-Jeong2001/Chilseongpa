@@ -6,9 +6,8 @@ resource "local_file" "ansible_inventory" {
     db_connection  = module.gcp.db_instance_connection_name
 
     # 2. AWS 
-    aws_ip         = module.aws.k3s_public_ip
-    # mon_ip         = module.aws.monitoring_public_ip
-    mon_ip = module.aws.monitoring_private_ip
+    aws_ip         = module.aws.k3s_private_ip
+    mon_ip         = module.aws.monitoring_private_ip
     bastion_ip     = module.aws.bastion_public_ip
     aws_token      = module.cloudflare.aws_tunnel_token
     mon_token      = module.cloudflare.monitoring_tunnel_token

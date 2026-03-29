@@ -75,6 +75,12 @@ variable "public_subnet_cidr" {
   default     = "10.20.1.0/24"
 }
 
+variable "private_subnet_cidr" {
+  description = "AWS Private subnet CIDR block (k3s / Monitoring 배치)"
+  type        = string
+  default     = "10.20.2.0/24"
+}
+
 variable "availability_zone" {
   description = "AWS Availability zone"
   type        = string
