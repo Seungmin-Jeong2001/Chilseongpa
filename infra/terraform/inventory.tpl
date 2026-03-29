@@ -28,3 +28,5 @@ gcp_project_id="${gcp_project_id}"
 cf_client_id="${cf_id}"
 cf_client_secret="${cf_secret}"
 aws_ip="${aws_ip}"
+app_domain=${app_domain}
+monitoring_domain=${monitoring_domain}

@@ -1,6 +1,7 @@
 resource "local_file" "ansible_inventory" {
   content = templatefile("${path.module}/inventory.tpl", {
     # 1. GCP 
+    gcp_project_id = var.gcp_project_id
     gcp_ip         = module.gcp.k3s_ephemeral_ip
     gcp_token      = module.cloudflare.gcp_tunnel_token
     db_connection  = module.gcp.db_instance_connection_name
@@ -11,12 +12,14 @@ resource "local_file" "ansible_inventory" {
     bastion_ip     = module.aws.bastion_public_ip
     aws_token      = module.cloudflare.aws_tunnel_token
     mon_token      = module.cloudflare.monitoring_tunnel_token
-    cf_id     = module.cloudflare.cf_access_client_id
-    cf_secret = module.cloudflare.cf_access_client_secret
-
+   
 
     # 3. 기타
-    gcp_project_id = var.gcp_project_id
+    cf_id     = module.cloudflare.cf_access_client_id
+    cf_secret = module.cloudflare.cf_access_client_secret
+    app_domain = var.app_domain
+    monitoring_domain = var.monitoring_domain
+    
   })
 
   filename = "${path.module}/../ansible/inventory.ini"

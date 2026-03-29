@@ -1,6 +1,4 @@
-# 1. 도메인 및 기본 정보
-app_domain: "app.bucheongoyangijanggun.com"          # 유저님의 실제 도메인
-monitoring_domain : "status.bucheongoyangijanggun.com" # 모니터링용 서브 도메인
+# 1. 모니터링 관련 기본 설정
 monitoring_base_dir: "/home/ubuntu/monitoring"
 
 # 2. 클라우드플레어 인증 (테라폼 아웃풋 값) 
