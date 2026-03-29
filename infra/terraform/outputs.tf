@@ -68,3 +68,38 @@ output "aws_monitoring_instance_id" {
   description = "AWS Monitoring Server EC2 Instance ID"
   value       = module.aws.monitoring_instance_id
 }
+
+output "ssh_commands" {
+  description = "Convenient SSH commands"
+
+  # 💡 참조를 'output 명칭'이 아닌 'module 경로'로 수정했습니다.
+  value = <<EOT
+================ SSH ACCESS ================
+#ssh 키가 Chilseongpa 디렉토리 바로 아래에 있는 경우에 한하여 아래 코드가 실행가능
+# 1. SSH 에이전트 실행 (이미 실행 중이라도 다시 실행해도 무방합니다)
+#eval $(ssh-agent -s)
+
+# 2. AWS 열쇠 등록 (상대 경로 주의)
+#ssh-add ../../chilseongpa_keypair.pem
+
+# 3. GCP 열쇠 등록
+#ssh-add ../../my_gcp_key
+
+# 4. 등록된 열쇠 목록 확인 (지갑에 열쇠가 잘 들어있는지 확인)
+#ssh-add -l
+
+# Bastion Host
+ssh -i ../../chilseongpa_keypair.pem ubuntu@${module.aws.bastion_public_ip}
+
+# Monitoring (via Bastion)
+ssh -i ../../chilseongpa_keypair.pem -A -J ubuntu@${module.aws.bastion_public_ip} ubuntu@${module.aws.monitoring_private_ip}
+
+# k3s Node (via Bastion)
+ssh -i ../../chilseongpa_keypair.pem -A -J ubuntu@${module.aws.bastion_public_ip} ubuntu@${module.aws.k3s_private_ip}
+
+# GCP k3s (GCP는 전용 키 사용 권장)
+ssh -i ~/my_gcp_key ubuntu@${module.gcp.k3s_ephemeral_ip}
+
+===========================================
+EOT
+}
