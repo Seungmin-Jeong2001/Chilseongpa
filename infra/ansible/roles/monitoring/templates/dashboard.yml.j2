@@ -4,4 +4,5 @@ providers:
   - name: default
     type: file
     options:
-      path: /var/lib/grafana/dashboards  # Grafana가 읽을 대시보드 경로
+      # [수정] /var/lib/grafana/dashboards → /etc/grafana/provisioning/dashboards
+      path: /etc/grafana/provisioning/dashboards

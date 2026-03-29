@@ -87,6 +87,7 @@
     src: "{{ alertmanager_config_src }}"
     dest: "{{ monitoring_base_dir }}/alertmanager.yml"
     mode: '0644'
+  notify: Reload Alertmanager
 
 - name: Render Alert Rules
   ansible.builtin.template:
@@ -137,6 +138,15 @@
     dest: "{{ monitoring_base_dir }}/grafana/provisioning/dashboards/dashboard.yml"
     mode: '0644'
   when: config_render_mode == "copy"
+
+# [수정] dashboard.json 배포 task 추가
+# 기존에 datasource.yml, dashboard.yml(provider)만 복사하고
+# 실제 대시보드 JSON을 복사하는 task가 없어 Grafana에 대시보드가 로드되지 않는 문제
+- name: Copy Grafana dashboard JSON
+  ansible.builtin.copy:
+    src: dashboard.json
+    dest: "{{ monitoring_base_dir }}/grafana/provisioning/dashboards/dashboard.json"
+    mode: '0644'
 
 - name: Check docker CLI
   ansible.builtin.command: docker --version
