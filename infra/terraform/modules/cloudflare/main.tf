@@ -62,7 +62,7 @@ resource "cloudflare_zero_trust_access_policy" "gcp_metrics_policy" {
   }
 }
 # -------------------------------------------------------------------
-# 2. Tunnel Config 설정 (인바운드 규칙)
+# 2. Tunnel Config 설정 (포트 수정 반영)
 # -------------------------------------------------------------------
 resource "cloudflare_zero_trust_tunnel_cloudflared_config" "configs" {
   for_each   = cloudflare_zero_trust_tunnel_cloudflared.tunnels
@@ -70,18 +70,17 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "configs" {
   tunnel_id  = each.value.id
 
   config {
-    # 서비스별 도메인 접속 규칙
     ingress_rule {
       hostname = each.key == "monitoring" ? var.monitoring_domain : var.app_domain
-      service  = "http://localhost:80"
+      # 💡 수정: 모니터링 서버는 80이 아닌 3000번 포트(Grafana)를 바라봐야 합니다.
+      service  = each.key == "monitoring" ? "http://localhost:3000" : "http://localhost:80"
     }
 
-    # 💡 추가: GCP 터널일 경우, 프로메테우스의 메트릭 수집(9100포트) 요청을 허용
     dynamic "ingress_rule" {
       for_each = each.key == "gcp" ? [1] : []
       content {
         hostname = "gcp-metrics.${var.app_domain}"
-        service  = "http://localhost:9100" # Node Exporter 포트
+        service  = "http://localhost:9100" 
       }
     }
     
@@ -89,6 +88,26 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "configs" {
       service = "http_status:404"
     }
   }
+}
+
+# -------------------------------------------------------------------
+# 4. DNS 레코드 추가 (누락되었던 부분)
+# -------------------------------------------------------------------
+# 💡 터널 도메인과 실제 주소를 연결하는 CNAME 레코드가 반드시 필요합니다.
+resource "cloudflare_record" "status_record" {
+  zone_id = var.cf_zone_id
+  name    = "status" # status.bucheongoyangijanggun.com
+  content   = "${cloudflare_zero_trust_tunnel_cloudflared.tunnels["monitoring"].id}.cfargotunnel.com"
+  type    = "CNAME"
+  proxied = true
+}
+
+resource "cloudflare_record" "metrics_record" {
+  zone_id = var.cf_zone_id
+  name    = "gcp-metrics"
+  content   = "${cloudflare_zero_trust_tunnel_cloudflared.tunnels["gcp"].id}.cfargotunnel.com"
+  type    = "CNAME"
+  proxied = true
 }
 
 # -------------------------------------------------------------------

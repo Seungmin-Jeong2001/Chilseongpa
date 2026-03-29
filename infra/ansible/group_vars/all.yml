@@ -1,12 +1,6 @@
 # 1. 모니터링 관련 기본 설정
 monitoring_base_dir: "/home/ubuntu/monitoring"
-
-# 2. 클라우드플레어 인증 (테라폼 아웃풋 값) 
-# inventory.ini에 정의된 변수명과 일치
-cf_client_id: "{{ cf_id }}"         
-cf_client_secret: "{{ cf_secret }}"
-
-# 3. 템플릿 경로 설정 (tasks/main.yml에서 사용)
+# 2. 템플릿 경로 설정 (tasks/main.yml에서 사용)
 prometheus_config_src: "prometheus.yml.j2"
 alertmanager_config_src: "alertmanager.yml.j2"
 alert_rules_src: "alert.rules.yml.j2"
@@ -17,10 +11,10 @@ config_render_mode: "template"
 
 
 
-# 4. 저장소 설정
+# 3. 저장소 설정
 storage_setup_enabled: false
 
-# 5. 알림 설정
+# 4. 알림 설정
 alert_webhook_url: "http://alert-bot:5000/webhook"
 
 
