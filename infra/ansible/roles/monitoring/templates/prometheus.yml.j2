@@ -95,7 +95,7 @@ scrape_configs:
     metrics_path: '/metrics'
     static_configs:
       - targets:
-          - "{{ aws_k3s_private_ip }}:8000"
+          - "{{ aws_ip }}:8000"
         labels:
           cluster: 'aws'
           service: 'backend'
@@ -126,7 +126,7 @@ scrape_configs:
     metrics_path: '/metrics'
     static_configs:
       - targets:
-          - "{{ aws_k3s_private_ip }}:9100"
+          - "{{ aws_ip }}:9100"
         labels:
           cluster: 'aws'
           environment: 'prod'
