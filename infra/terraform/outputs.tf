@@ -25,18 +25,9 @@ output "aws_public_subnet_id" {
   value       = module.aws.public_subnet_id
 }
 
-# -----------------------------------------------
-# AWS k3s node outputs
-# -----------------------------------------------
-# Prometheus Node Exporter scrape 대상
-output "aws_k3s_public_ip" {
-  description = "AWS k3s Node Public IP"
-  value       = module.aws.k3s_public_ip
-}
-
-output "aws_standby_security_group_id" {
-  description = "AWS k3s 노드 Security Group ID"
-  value       = module.aws.standby_security_group_id
+output "aws_private_subnet_id" {
+  description = "AWS Private Subnet ID"
+  value       = module.aws.private_subnet_id
 }
 
 # -----------------------------------------------
@@ -53,11 +44,24 @@ output "aws_bastion_public_ip" {
 }
 
 # -----------------------------------------------
+# AWS k3s node outputs
+# -----------------------------------------------
+output "aws_k3s_private_ip" {
+  description = "AWS k3s Node Private IP (Bastion 경유 접속)"
+  value       = module.aws.k3s_private_ip
+}
+
+output "aws_standby_security_group_id" {
+  description = "AWS k3s 노드 Security Group ID"
+  value       = module.aws.standby_security_group_id
+}
+
+# -----------------------------------------------
 # AWS Monitoring Server outputs
 # -----------------------------------------------
-output "aws_monitoring_public_ip" {
-  description = "AWS Monitoring Server Public IP"
-  value       = module.aws.monitoring_public_ip
+output "aws_monitoring_private_ip" {
+  description = "AWS Monitoring Server Private IP"
+  value       = module.aws.monitoring_private_ip
 }
 
 output "aws_monitoring_instance_id" {
