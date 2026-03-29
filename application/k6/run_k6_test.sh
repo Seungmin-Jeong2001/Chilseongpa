@@ -2,6 +2,13 @@
 
 set -euo pipefail
 
+if [ -f .env.testk6 ]; then
+  echo "Loading variables from .env.testk6..."
+  set -a
+  source .env.testk6
+  set +a
+fi
+
 # 필수 변수 검증
 if [ -z "${TARGET_BASE_URL:-}" ]; then
   echo "ERROR: TARGET_BASE_URL is required"
