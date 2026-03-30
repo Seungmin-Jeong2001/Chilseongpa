@@ -1,7 +1,8 @@
 # 1. 모니터링 관련 기본 설정
-monitoring_base_dir: "/home/ubuntu/monitoring"
 storage_setup_enabled: true # EBS 볼륨을 사용할지 여부 (true/false) false 면 로컬, true 면 EBS 볼륨 사용
-# EBS 볼륨 장치명 (예: /dev/xvdf)
+ebs_device_name: "/dev/nvme1n1"
+monitoring_base_dir: "/home/ubuntu/monitoring"
+
 
 # 2. 템플릿 경로 설정 (tasks/main.yml에서 사용)
 prometheus_config_src: "prometheus.yml.j2"

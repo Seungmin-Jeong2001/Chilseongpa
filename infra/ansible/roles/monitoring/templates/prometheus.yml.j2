@@ -25,7 +25,7 @@ scrape_configs:
   # GCP Monitoring API → stackdriver-exporter → Prometheus
   - job_name: 'gcp-cloudsql'
     static_configs:
-      - targets: ['localhost:9255']
+      - targets: ['172.17.0.1:9255']
         labels:
           cluster: 'gcp'
           service: 'cloudsql'
@@ -59,7 +59,7 @@ scrape_configs:
       insecure_skip_verify: true
     static_configs:
       - targets:
-          - "gcp-metrics.{{ app_domain }}"
+          - "172.17.0.1:9101"
         labels:
           cluster: 'gcp'
           environment: 'prod'

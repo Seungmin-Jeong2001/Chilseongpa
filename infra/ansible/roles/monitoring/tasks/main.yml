@@ -48,6 +48,7 @@
     owner: "65534"                # Prometheus 컨테이너 기본 UID
     group: "65534"
     mode: '0755'
+    recurse: true
   when: storage_setup_enabled | bool
 
 - name: Set permissions for Grafana data dir
@@ -56,6 +57,7 @@
     owner: "472"                  # Grafana 컨테이너 기본 UID
     group: "472"
     mode: '0755'
+    recurse: true
   when: storage_setup_enabled | bool
 
 - name: Create monitoring directory
@@ -160,3 +162,36 @@
   community.docker.docker_compose_v2:
     project_src: "{{ monitoring_base_dir }}" # docker-compose.yml이 위치한 디렉토리
     state: present               # docker compose up과 동일하게 서비스 생성/실행
+
+
+# Cloudflared Access Proxy 실행
+- name: Run cloudflared access proxy for GCP metrics
+  ansible.builtin.shell: |
+    nohup cloudflared access tcp --hostname gcp-metrics.{{ app_domain }} \
+      --listener localhost:9101 \
+      --service-token-id {{ cf_client_id }} \
+      --service-token-secret {{ cf_client_secret }} > /dev/null 2>&1 &
+  changed_when: false
+
+# Cloud SQL Auth Proxy 설치 및 실행
+- name: Download Cloud SQL Auth Proxy binary
+  get_url:
+    url: https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.11.0/cloud-sql-proxy.linux.amd64
+    dest: /usr/local/bin/cloud-sql-proxy
+    mode: '0755'
+
+- name: Copy GCP Service Account Key
+  copy:
+    src: gcp-sa-key.json
+    dest: /home/ubuntu/gcp-sa-key.json
+    mode: '0600'
+
+- name: Run Cloud SQL Auth Proxy
+  ansible.builtin.shell: |
+    nohup /usr/local/bin/cloud-sql-proxy \
+      --address 0.0.0.0 \
+      --port 9255 \
+      --credentials-file /home/ubuntu/gcp-sa-key.json \
+      {{ db_instance_name }} > /dev/null 2>&1 &
+  changed_when: false
+

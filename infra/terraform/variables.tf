@@ -169,5 +169,5 @@ variable "app_domain" {
 }
 
 variable "monitoring_domain" {
-  default = "status.bucheongoyangijanggun.com"
+  default = "monitoring.bucheongoyangijanggun.com"
 }
