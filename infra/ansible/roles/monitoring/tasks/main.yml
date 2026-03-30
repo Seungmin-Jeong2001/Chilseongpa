@@ -164,11 +164,17 @@
     state: present               # docker compose up과 동일하게 서비스 생성/실행
 
 
-# Cloudflared Access Proxy 실행
+#  기존 프로세스 종료 - cloudflared access proxy와 Cloud SQL Auth Proxy는 설정 변경 시 재시작이 필요하므로, 기존에 실행 중인 프로세스가 있다면 종료 후 새로 띄우도록 합니다.
+- name: Stop existing cloudflared access proxy
+  ansible.builtin.shell: "pkill -f '[c]loudflared access tcp --hostname gcp-metrics' || true"
+  changed_when: false
+
+# cloudflared access proxy 실행
 - name: Run cloudflared access proxy for GCP metrics
   ansible.builtin.shell: |
-    nohup cloudflared access tcp --hostname gcp-metrics.{{ app_domain }} \
-      --listener localhost:9101 \
+    nohup cloudflared access tcp \
+      --hostname gcp-metrics.{{ app_domain }} \
+      --listener 0.0.0.0:9101 \
       --service-token-id {{ cf_client_id }} \
       --service-token-secret {{ cf_client_secret }} > /dev/null 2>&1 &
   changed_when: false
@@ -188,9 +194,14 @@
 
 - name: Run Cloud SQL Auth Proxy
   ansible.builtin.shell: |
+    # 💡 기존 프로세스가 있다면 죽이고 새로 띄웁니다 (설정 변경 반영)
+    pkill cloud-sql-proxy || true
     nohup /usr/local/bin/cloud-sql-proxy \
       --address 0.0.0.0 \
       --port 9255 \
+      --http-address 0.0.0.0 \
+      --http-port 9091 \ 
+      --prometheus \
       --credentials-file /home/ubuntu/gcp-sa-key.json \
       {{ db_instance_name }} > /dev/null 2>&1 &
   changed_when: false
