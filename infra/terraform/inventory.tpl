@@ -23,8 +23,16 @@ ansible_ssh_private_key_file=../../chilseongpa_keypair.pem
 ansible_ssh_common_args='-o ProxyCommand="ssh -W %h:%p -q ubuntu@${bastion_ip} -i ../../chilseongpa_keypair.pem -o StrictHostKeyChecking=no"'
 
 [all:vars]
-ansible_user=ubuntu
-gcp_project_id="${gcp_project_id}"
-cf_client_id="${cf_id}"
-cf_client_secret="${cf_secret}"
-aws_ip="${aws_ip}"
+ansible_python_interpreter=/usr/bin/python3
+ansible_user=ubuntu  
+gcp_project_id=${gcp_project_id} 
+cf_client_id=${cf_id}
+cf_client_secret=${cf_secret}
+aws_ip=${aws_ip}
+gcp_ip=${gcp_ip}
+app_domain=${app_domain}
+grafana_domain=${grafana_domain}
+prometheus_domain=${prometheus_domain}
+db_instance_name=${db_connection}
+
+#db_conn 과 db_instance_name 은 전자의 경우 gcp 측에서 사용하는 변수명, db_instance_name 의 경우 aws_monitoring에서 사용하는 변수명

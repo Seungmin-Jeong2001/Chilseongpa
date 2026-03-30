@@ -71,8 +71,6 @@ output "aws_monitoring_instance_id" {
 
 output "ssh_commands" {
   description = "Convenient SSH commands"
-
-  # 💡 참조를 'output 명칭'이 아닌 'module 경로'로 수정했습니다.
   value = <<EOT
 ================ SSH ACCESS ================
 #ssh 키가 Chilseongpa 디렉토리 바로 아래에 있는 경우에 한하여 아래 코드가 실행가능

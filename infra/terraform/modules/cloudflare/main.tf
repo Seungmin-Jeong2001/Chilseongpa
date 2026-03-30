@@ -7,16 +7,15 @@ terraform {
   }
 }
 
-# 💡 32자리의 무작위 터널 비밀번호 생성
+# -------------------------------------------------------------------
+# 0. Tunnel 생성 및 비밀번호 관리
+# -------------------------------------------------------------------
 resource "random_password" "tunnel_secrets" {
   for_each = toset(["gcp", "aws", "monitoring"])
   length   = 32
   special  = false
 }
 
-# -------------------------------------------------------------------
-# 0. Tunnel 생성
-# -------------------------------------------------------------------
 resource "cloudflare_zero_trust_tunnel_cloudflared" "tunnels" {
   for_each   = toset(["gcp", "aws", "monitoring"])
   account_id = var.cf_account_id
@@ -25,35 +24,24 @@ resource "cloudflare_zero_trust_tunnel_cloudflared" "tunnels" {
 }
 
 # -------------------------------------------------------------------
-# 1. Access 설정 (출입증 및 성문)
+# 1. Access 설정 (인증 및 토큰)
 # -------------------------------------------------------------------
-
-# 💡 수정: 최신 리소스명 사용 (Deprecated 해결)
 resource "cloudflare_zero_trust_access_service_token" "monitoring_token" {
   account_id = var.cf_account_id
   name       = "Chilseongpa-Monitoring-Token"
 }
 
-# -------------------------------------------------------------------
-# 1. Access 설정 (최신 v4 규격 적용)
-# -------------------------------------------------------------------
-
-# 💡 수정: cloudflare_access_application -> cloudflare_zero_trust_access_application
 resource "cloudflare_zero_trust_access_application" "gcp_metrics" {
   zone_id = var.cf_zone_id
   name    = "GCP K3s Metrics"
-  domain  = "gcp-metrics.${var.app_domain}"
+  domain  = "gcp-metrics.bucheongoyangijanggun.com"
   type    = "self_hosted"
 }
 
-# 💡 수정: cloudflare_access_policy -> cloudflare_zero_trust_access_policy
 resource "cloudflare_zero_trust_access_policy" "gcp_metrics_policy" {
   application_id = cloudflare_zero_trust_access_application.gcp_metrics.id
-  zone_id        = var.cf_zone_id
+  zone_id         = var.cf_zone_id
   name           = "Allow Prometheus Scraper"
-  
-  # 💡 중요: "service_auth" 대신 "non_identity"를 사용해야 합니다.
-  # 서비스 토큰을 통한 인증은 '사용자 ID'가 없는 방식이기 때문입니다.
   decision       = "non_identity" 
   precedence     = 1
 
@@ -61,8 +49,9 @@ resource "cloudflare_zero_trust_access_policy" "gcp_metrics_policy" {
     service_token = [cloudflare_zero_trust_access_service_token.monitoring_token.id]
   }
 }
+
 # -------------------------------------------------------------------
-# 2. Tunnel Config 설정 (인바운드 규칙)
+# 2. Tunnel Config 설정 (멀티 서비스 매핑)
 # -------------------------------------------------------------------
 resource "cloudflare_zero_trust_tunnel_cloudflared_config" "configs" {
   for_each   = cloudflare_zero_trust_tunnel_cloudflared.tunnels
@@ -70,21 +59,39 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "configs" {
   tunnel_id  = each.value.id
 
   config {
-    # 서비스별 도메인 접속 규칙
-    ingress_rule {
-      hostname = each.key == "monitoring" ? var.monitoring_domain : var.app_domain
-      service  = "http://localhost:80"
+    # [A] Monitoring 터널 전용 규칙 (Grafana & Prometheus)
+    dynamic "ingress_rule" {
+      for_each = each.key == "monitoring" ? [1] : []
+      content {
+        hostname = var.grafana_domain # monitoring.bucheong...
+        service  = "http://localhost:3000" # Grafana 접속
+      }
     }
 
-    # 💡 추가: GCP 터널일 경우, 프로메테우스의 메트릭 수집(9100포트) 요청을 허용
+    dynamic "ingress_rule" {
+      for_each = each.key == "monitoring" ? [1] : []
+      content {
+        hostname = var.prometheus_domain
+        service  = "http://localhost:9090" # Prometheus 접속
+      }
+    }
+
+    # [B] GCP 터널 전용 규칙 (App & Metrics)
     dynamic "ingress_rule" {
       for_each = each.key == "gcp" ? [1] : []
       content {
-        hostname = "gcp-metrics.${var.app_domain}"
-        service  = "http://localhost:9100" # Node Exporter 포트
+        hostname = "gcp-metrics.bucheongoyangijanggun.com"
+        service  = "http://localhost:9100" 
       }
     }
-    
+
+    # [C] 기본 공통 규칙 (App 배포용)
+    ingress_rule {
+      hostname = var.app_domain # app.bucheong...
+      service  = "http://localhost:80"
+    }
+
+    # [D] Catch-all 규칙 (필수)
     ingress_rule {
       service = "http_status:404"
     }
@@ -92,7 +99,37 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "configs" {
 }
 
 # -------------------------------------------------------------------
-# 3. Load Balancer & 기타 (기존 코드 유지)
+# 3. DNS 레코드 설정 (도메인 - 터널 연결)
+# -------------------------------------------------------------------
+# Grafana 도메인
+resource "cloudflare_record" "monitoring_record" {
+  zone_id = var.cf_zone_id
+  name    = "grafana"
+  content = "${cloudflare_zero_trust_tunnel_cloudflared.tunnels["monitoring"].id}.cfargotunnel.com"
+  type    = "CNAME"
+  proxied = true
+}
+
+# Prometheus 도메인
+resource "cloudflare_record" "prometheus_record" {
+  zone_id = var.cf_zone_id
+  name    = "prometheus"
+  content = "${cloudflare_zero_trust_tunnel_cloudflared.tunnels["monitoring"].id}.cfargotunnel.com"
+  type    = "CNAME"
+  proxied = true
+}
+
+# GCP Metrics 도메인
+resource "cloudflare_record" "metrics_record" {
+  zone_id = var.cf_zone_id
+  name    = "gcp-metrics"
+  content = "${cloudflare_zero_trust_tunnel_cloudflared.tunnels["gcp"].id}.cfargotunnel.com"
+  type    = "CNAME"
+  proxied = true
+}
+
+# -------------------------------------------------------------------
+# 4. Load Balancer 설정
 # -------------------------------------------------------------------
 resource "cloudflare_load_balancer_monitor" "monitor" {
   account_id     = var.cf_account_id

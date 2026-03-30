@@ -114,3 +114,15 @@ resource "aws_instance" "monitoring" {
     Role        = "monitoring"
   }
 }
+
+# 모니터링 수집기 볼륨
+resource "aws_ebs_volume" "monitoring_data" {
+  availability_zone = var.availability_zone
+  size              = 20
+}
+# 뷸륨 결착
+resource "aws_volume_attachment" "ebs_att" {
+  device_name = "/dev/sdh" # OS에서는 nvme1n1 등으로 보일 수 있음
+  volume_id   = aws_ebs_volume.monitoring_data.id
+  instance_id = aws_instance.monitoring.id
+}
