@@ -1,4 +1,4 @@
-version: '3.8'
+# 💡 'version' 속성은 최신 Docker Compose에서 더 이상 필요하지 않으므로 제거합니다.
 
 services:
   prometheus:
@@ -9,7 +9,6 @@ services:
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
       - ./alert.rules.yml:/etc/prometheus/alert.rules.yml
-      # 💡 변수에 따라 실제 경로(/var/lib) 또는 로컬 경로(./data) 선택
       - {{ storage_setup_enabled | ternary('/var/lib/prometheus', './data/prometheus') }}:/prometheus
     ports:
       - "9090:9090"
@@ -18,12 +17,13 @@ services:
       - "--storage.tsdb.path=/prometheus"
       - "--storage.tsdb.retention.time=15d"
       - "--web.enable-lifecycle"
+    networks:
+      - monitoring-network # 💡 네트워크 추가
     restart: always
 
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
-    # [수정] depends_on 추가 - Grafana가 Prometheus보다 먼저 뜨면 datasource 연결 실패
     depends_on:
       - prometheus
       - alertmanager
@@ -32,6 +32,8 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning
     ports:
       - "3000:3000"
+    networks:
+      - monitoring-network # 💡 네트워크 추가
     restart: always
 
   alertmanager:
@@ -41,11 +43,10 @@ services:
       - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml
     ports:
       - "9093:9093"
+    networks:
+      - monitoring-network # 💡 네트워크 추가
     restart: always
 
- 
-  # 이미지 이름은 후에 변경 해줘야함, 깃허브 시크릿을 사용할 예정
-  services:
   discord-bot:
     image: jeongseungmin/chilseongpa-bot_dockerhub:latest
     container_name: chilseongpa-bot
@@ -54,12 +55,15 @@ services:
       - DISCORD_BOT_TOKEN={{ discord_bot_token }}
       - DISCORD_CHANNEL_ID={{ discord_channel_id }}
       - GEMINI_API_KEY={{ gemini_api_key }}
-      - GRAFANA_URL={{ grafana_domain }}
+      - GRAFANA_URL=https://{{ grafana_domain }}
     ports:
       - "5000:5000"
     networks:
       - monitoring-network
+    depends_on:
+      - alertmanager # 💡 웹훅을 받을 대상인 alertmanager가 먼저 뜨도록 설정
 
 networks:
   monitoring-network:
-    external: true
+    # 💡 external: true를 제거하여 컴포즈가 네트워크를 직접 만들게 합니다.
+    driver: bridge
