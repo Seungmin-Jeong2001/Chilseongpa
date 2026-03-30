@@ -41,4 +41,19 @@ services:
       - "9093:9093"
     restart: always
 
- 
+  # 💡 GCP Cloud SQL 메트릭 수집 (Monitoring API → Prometheus 변환)
+  stackdriver-exporter:
+    image: prometheuscommunity/stackdriver-exporter:latest
+    container_name: stackdriver-exporter
+    volumes:
+      - ./gcp-sa-key.json:/credentials/gcp-sa-key.json:ro
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/credentials/gcp-sa-key.json
+    command:
+      - "--google.project-id={{ gcp_project_id }}"
+      - "--monitoring.metrics-type-prefixes=cloudsql.googleapis.com"
+      - "--monitoring.metrics-interval=5m"
+      - "--monitoring.metrics-offset=0s"
+    ports:
+      - "9255:9255"
+    restart: always

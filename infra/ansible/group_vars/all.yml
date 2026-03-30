@@ -19,8 +19,13 @@ config_render_mode: "template"
 
 
 
+# GCP 서비스 계정 키 경로 (terraform output -raw gcp_db_proxy_sa_key > 저장한 파일 경로)
+# 예: ../terraform/gcp-sa-key.json
+gcp_sa_key_path: "../terraform/gcp-sa-key.json"
+
 # 4. 저장소 설정
-storage_setup_enabled: false
+storage_setup_enabled: true
+ebs_device_name: "/dev/sdh"     # Terraform에서 /dev/sdh로 연결, Nitro AMI udev rule로 심링크 제공
 
 # 5. 알림 설정
 alert_webhook_url: "http://alert-bot:5000/webhook"

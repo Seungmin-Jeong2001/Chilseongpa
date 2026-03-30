@@ -18,6 +18,14 @@ resource "google_project_iam_member" "db_proxy_sa_role" {
   member     = "serviceAccount:${google_service_account.db_proxy_sa.email}"
 }
 
+# stackdriver-exporter가 GCP Monitoring API를 호출하기 위한 권한
+resource "google_project_iam_member" "db_proxy_sa_monitoring_role" {
+  depends_on = [time_sleep.wait_30_seconds_db]
+  project    = var.gcp_project_id
+  role       = "roles/monitoring.viewer"
+  member     = "serviceAccount:${google_service_account.db_proxy_sa.email}"
+}
+
 resource "google_service_account_key" "db_proxy_sa_key" {
   depends_on         = [google_project_iam_member.db_proxy_sa_role]
   service_account_id = google_service_account.db_proxy_sa.name

@@ -69,3 +69,8 @@ output "monitoring_sg_id" {
   description = "Monitoring Server Security Group ID"
   value       = aws_security_group.monitoring.id
 }
+
+output "monitoring_data_volume_id" {
+  description = "Monitoring Server 데이터 EBS 볼륨 ID (Prometheus 영속 저장소)"
+  value       = aws_ebs_volume.monitoring_data.id
+}

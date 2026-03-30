@@ -46,15 +46,49 @@ resource "cloudflare_zero_trust_access_application" "gcp_metrics" {
   type    = "self_hosted"
 }
 
-# 💡 수정: cloudflare_access_policy -> cloudflare_zero_trust_access_policy
 resource "cloudflare_zero_trust_access_policy" "gcp_metrics_policy" {
   application_id = cloudflare_zero_trust_access_application.gcp_metrics.id
   zone_id        = var.cf_zone_id
   name           = "Allow Prometheus Scraper"
-  
-  # 💡 중요: "service_auth" 대신 "non_identity"를 사용해야 합니다.
-  # 서비스 토큰을 통한 인증은 '사용자 ID'가 없는 방식이기 때문입니다.
-  decision       = "non_identity" 
+  decision       = "non_identity"
+  precedence     = 1
+
+  include {
+    service_token = [cloudflare_zero_trust_access_service_token.monitoring_token.id]
+  }
+}
+
+resource "cloudflare_zero_trust_access_application" "gcp_app_metrics" {
+  zone_id = var.cf_zone_id
+  name    = "GCP App Metrics"
+  domain  = "gcp-app-metrics.${var.app_domain}"
+  type    = "self_hosted"
+}
+
+resource "cloudflare_zero_trust_access_policy" "gcp_app_metrics_policy" {
+  application_id = cloudflare_zero_trust_access_application.gcp_app_metrics.id
+  zone_id        = var.cf_zone_id
+  name           = "Allow Prometheus Scraper"
+  decision       = "non_identity"
+  precedence     = 1
+
+  include {
+    service_token = [cloudflare_zero_trust_access_service_token.monitoring_token.id]
+  }
+}
+
+resource "cloudflare_zero_trust_access_application" "gcp_kube_state" {
+  zone_id = var.cf_zone_id
+  name    = "GCP kube-state-metrics"
+  domain  = "gcp-kube-state.${var.app_domain}"
+  type    = "self_hosted"
+}
+
+resource "cloudflare_zero_trust_access_policy" "gcp_kube_state_policy" {
+  application_id = cloudflare_zero_trust_access_application.gcp_kube_state.id
+  zone_id        = var.cf_zone_id
+  name           = "Allow Prometheus Scraper"
+  decision       = "non_identity"
   precedence     = 1
 
   include {
@@ -76,12 +110,30 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "configs" {
       service  = "http://localhost:80"
     }
 
-    # 💡 추가: GCP 터널일 경우, 프로메테우스의 메트릭 수집(9100포트) 요청을 허용
+    # 💡 GCP 터널: Node Exporter (9100) 수집
     dynamic "ingress_rule" {
       for_each = each.key == "gcp" ? [1] : []
       content {
         hostname = "gcp-metrics.${var.app_domain}"
-        service  = "http://localhost:9100" # Node Exporter 포트
+        service  = "http://localhost:9100"
+      }
+    }
+
+    # 💡 GCP 터널: App /metrics (8000) 수집
+    dynamic "ingress_rule" {
+      for_each = each.key == "gcp" ? [1] : []
+      content {
+        hostname = "gcp-app-metrics.${var.app_domain}"
+        service  = "http://localhost:8000"
+      }
+    }
+
+    # 💡 GCP 터널: kube-state-metrics (NodePort 30080) 수집
+    dynamic "ingress_rule" {
+      for_each = each.key == "gcp" ? [1] : []
+      content {
+        hostname = "gcp-kube-state.${var.app_domain}"
+        service  = "http://localhost:30080"
       }
     }
     

@@ -70,9 +70,11 @@ resource "google_compute_instance" "k3s_primary_node" {
   # 루트에서 전달받은 var.tunnel_token을 사용합니다.
   metadata_startup_script = <<-EOF
     #!/bin/bash
-    curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
-    dpkg -i cloudflared.deb
-    cloudflared service install ${var.tunnel_token}
+    if ! command -v cloudflared &>/dev/null; then
+      curl -L --output /tmp/cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+      dpkg -i /tmp/cloudflared.deb
+      cloudflared service install ${var.tunnel_token}
+    fi
   EOF
 
   # 보안 및 식별 태그

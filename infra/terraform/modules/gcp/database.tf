@@ -5,7 +5,7 @@
 # ==============================================================================
 
 resource "google_sql_database_instance" "primary_db" {
-  name             = "hybrid-primary-db"
+  name             = "hybrid-primary-db-v2"
   database_version = "MYSQL_8_0" # 최신 MySQL 8.0 엔진 사용
   region           = var.gcp_region
 

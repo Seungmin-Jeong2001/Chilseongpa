@@ -7,7 +7,8 @@
 BASTION_IP=$(terraform output -raw aws_bastion_public_ip)
 K3S_IP=$(terraform output -raw aws_k3s_private_ip)
 MON_IP=$(terraform output -raw aws_monitoring_private_ip)
-KEY=~/.ssh/chilseong-jh.pem
+# 스크립트 위치(infra/terraform)에서 두 단계 위가 프로젝트 루트
+KEY="$(cd "$(dirname "$0")/../.." && pwd)/chilseongpa_keypair.pem"
 
 echo "Bastion IP  : $BASTION_IP"
 echo "k3s IP      : $K3S_IP"

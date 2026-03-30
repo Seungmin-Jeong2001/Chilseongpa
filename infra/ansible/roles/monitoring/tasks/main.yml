@@ -58,6 +58,12 @@
     mode: '0755'
   when: storage_setup_enabled | bool
 
+- name: Copy GCP service account key for stackdriver-exporter
+  ansible.builtin.copy:
+    src: "{{ gcp_sa_key_path }}"
+    dest: "{{ monitoring_base_dir }}/gcp-sa-key.json"
+    mode: '0600'
+
 - name: Create monitoring directory
   ansible.builtin.file:
     path: "{{ monitoring_base_dir }}"

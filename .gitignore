@@ -41,3 +41,7 @@ my_gcp_key.pub
 
 # 테라폼 설정 폴더
 .terraform/
+.terraform.lock.hcl
+
+# Claude Code
+.claude/
