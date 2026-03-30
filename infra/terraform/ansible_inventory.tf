@@ -18,7 +18,8 @@ resource "local_file" "ansible_inventory" {
     cf_id     = module.cloudflare.cf_access_client_id
     cf_secret = module.cloudflare.cf_access_client_secret
     app_domain = var.app_domain
-    monitoring_domain = var.monitoring_domain
+    grafana_domain = var.grafana_domain
+    prometheus_domain = var.prometheus_domain
     
   })
 

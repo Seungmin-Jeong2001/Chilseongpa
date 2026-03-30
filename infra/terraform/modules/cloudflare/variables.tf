@@ -26,7 +26,13 @@ variable "app_domain" {
   type        = string
 }
 
-variable "monitoring_domain" {
-  description = "모니터링 서버(Grafana 등)에 접근할 도메인"
+variable "grafana_domain" {
+  description = "Grafana에 접근할 도메인"
   type        = string
+}
+
+variable "prometheus_domain" {
+  description = "Prometheus에 접근할 도메인"
+  type        = string
+  
 }

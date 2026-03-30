@@ -168,6 +168,9 @@ variable "app_domain" {
   default = "app.bucheongoyangijanggun.com"
 }
 
-variable "monitoring_domain" {
-  default = "monitoring.bucheongoyangijanggun.com"
+variable "grafana_domain" {
+  default = "grafana.bucheongoyangijanggun.com"
+}
+variable "prometheus_domain" {
+  default = "prometheus.bucheongoyangijanggun.com"
 }
