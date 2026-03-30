@@ -44,3 +44,22 @@ services:
     restart: always
 
  
+  # 이미지 이름은 후에 변경 해줘야함, 깃허브 시크릿을 사용할 예정
+  services:
+  discord-bot:
+    image: jeongseungmin/chilseongpa-bot_dockerhub:latest
+    container_name: chilseongpa-bot
+    restart: always
+    environment:
+      - DISCORD_BOT_TOKEN={{ discord_bot_token }}
+      - DISCORD_CHANNEL_ID={{ discord_channel_id }}
+      - GEMINI_API_KEY={{ gemini_api_key }}
+      - GRAFANA_URL={{ grafana_domain }}
+    ports:
+      - "5000:5000"
+    networks:
+      - monitoring-network
+
+networks:
+  monitoring-network:
+    external: true

@@ -162,6 +162,7 @@
   community.docker.docker_compose_v2:
     project_src: "{{ monitoring_base_dir }}" # docker-compose.yml이 위치한 디렉토리
     state: present               # docker compose up과 동일하게 서비스 생성/실행
+    pull: always                # 이미지가 최신인지 항상 확인하여 pull 수행
 
 
 #  기존 프로세스 종료 - cloudflared access proxy와 Cloud SQL Auth Proxy는 설정 변경 시 재시작이 필요하므로, 기존에 실행 중인 프로세스가 있다면 종료 후 새로 띄우도록 합니다.
