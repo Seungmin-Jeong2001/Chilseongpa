@@ -8,14 +8,23 @@
 - name: "GCP 독립 K3s 구축"
   hosts: gcp-main  # 👈 gcp_main에서 gcp-main으로 수정
   become: yes
+  vars_files:
+    - group_vars/vault.yml
   roles:
+    - prerequisites
     - k3s
+    - app_deploy
 
 - name: "AWS 독립 K3s 구축"
   hosts: aws-sub   # 👈 aws_sub에서 aws-sub으로 수정
   become: yes
+  vars_files:
+    - group_vars/vault.yml
   roles:
+    - prerequisites
     - k3s
+    - app_deploy
+    
 
 - name: "모니터링 및 알림 센터 구축"
   hosts: aws-monitor # 👈 monitoring에서 aws-monitor로 수정
