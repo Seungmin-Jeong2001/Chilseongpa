@@ -1,17 +1,31 @@
----
-- name: K3s 설치 여부 확인 (중복 설치 방지)
+- name: K3s 설치 여부 확인
   command: which k3s
   register: k3s_installed
   ignore_errors: true
   changed_when: false
 
-- name: K3s  설치 스크립트 다운로드 및 실행
+- name: K3s 설치
   shell: |
-    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --cluster-init" sh -
-  when: k3s_installed.rc != 0 # k3s가 없을 때만 실행
+    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server" sh -
+  when: k3s_installed.rc != 0
 
-- name: K3s 서비스가 정상적으로 실행 중인지 확인
+- name: K3s 서비스 시작 및 활성화
   systemd:
     name: k3s
     state: started
     enabled: yes
+
+- name: kubeconfig 권한 설정
+  file:
+    path: /etc/rancher/k3s/k3s.yaml
+    mode: '0644'
+
+- name: KUBECONFIG 환경변수 등록
+  lineinfile:
+    path: /etc/environment
+    line: 'KUBECONFIG=/etc/rancher/k3s/k3s.yaml'
+
+- name: node Ready 대기
+  command: k3s kubectl wait --for=condition=Ready node --all --timeout=60s
+  retries: 5
+  delay: 10
