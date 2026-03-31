@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main # 💡 메인 브랜치에 푸시될 때만 실행
-    #   - feature/** # 💡 feature 브랜치에도 푸시될 때 실행
+      - feature/** # 💡 feature 브랜치에도 푸시될 때 실행
     paths:
       - 'aiops/discord-bot/**' # 💡 해당 경로 변경 시에만 실행
 
