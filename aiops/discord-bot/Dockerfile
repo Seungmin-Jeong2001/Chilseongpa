@@ -4,16 +4,16 @@ FROM python:3.10-slim
 # 2. 작업 디렉토리 설정
 WORKDIR /app
 
-# 3. kubectl 설치를 위해 curl 설치 및 kubectl 바이너리 다운로드
+# 3. 필수 도구 설치 및 캐시 정리 (이미지 용량 최적화)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    ca-certificates \
+    && curl -fsSL https://get.docker.com -o get-docker.sh && sh get-docker.sh \
     && curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" \
     && install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl \
-    && rm kubectl \
+    && rm kubectl get-docker.sh \
     && apt-get purge -y --auto-remove curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# 4. 필수 라이브러리 설치 (discord.py, flask, google-generativeai 등)
+    && rm -rf /var/lib/apt/lists/* # 4. 필수 라이브러리 설치 (레이어 캐싱 활용)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

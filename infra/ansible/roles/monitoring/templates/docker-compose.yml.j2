@@ -52,9 +52,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./configs/kubeconfig-gcp-main.yaml:/root/.kube/config-gcp
       - ./configs/kubeconfig-aws-sub.yaml:/root/.kube/config-aws
-    environment:
-      - KUBECONFIG_GCP=/root/.kube/config-gcp
-      - KUBECONFIG_AWS=/root/.kube/config-aws
+      - ./configs:/root/.kube/
     image: jeongseungmin/chilseongpa-bot_dockerhub:latest
     container_name: chilseongpa-bot
     restart: always
@@ -63,6 +61,8 @@ services:
       - DISCORD_CHANNEL_ID={{ discord_channel_id }}
       - GEMINI_API_KEY={{ gemini_api_key }}
       - GRAFANA_URL=https://{{ grafana_domain }}
+      - KUBECONFIG_GCP=/root/.kube/config-gcp
+      - KUBECONFIG_AWS=/root/.kube/config-aws
     ports:
       - "5000:5000"
     networks:

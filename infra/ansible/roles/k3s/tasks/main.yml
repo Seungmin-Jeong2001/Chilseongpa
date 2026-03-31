@@ -1,17 +1,48 @@
----
-- name: K3s 설치 여부 확인 (중복 설치 방지)
-  command: which k3s
+# 1. K3s 설치 여부 확인 (중복 설치 방지)
+- name: Check if K3s is installed
+  ansible.builtin.command: which k3s
   register: k3s_installed
-  ignore_errors: true
+  failed_when: false      # ignore_errors 대신 사용하여 불필요한 빨간색 에러 로그 방지
   changed_when: false
 
-- name: K3s  설치 스크립트 다운로드 및 실행
-  shell: |
+# 2. K3s 설치 스크립트 실행 (미설치 시에만)
+- name: Download and execute K3s install script
+  ansible.builtin.shell: |
     curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --cluster-init" sh -
-  when: k3s_installed.rc != 0 # k3s가 없을 때만 실행
+  when: k3s_installed.rc != 0
 
-- name: K3s 서비스가 정상적으로 실행 중인지 확인
-  systemd:
+# 3. K3s 서비스가 정상적으로 실행 중인지 확인
+- name: Ensure K3s service is started and enabled
+  ansible.builtin.systemd:
     name: k3s
     state: started
     enabled: yes
+
+# 4. [수정] 로컬(내 PC)에 열쇠를 저장할 configs 폴더 생성
+- name: Ensure local configs directory exists
+  delegate_to: localhost
+  ansible.builtin.file:
+    path: "{{ playbook_dir }}/configs" # 상대 경로보다 더 확실한 변수 사용 추천
+    state: directory
+    mode: '0755'
+  run_once: true
+  become: false
+
+# 5. [원격 작업] GCP/AWS 마스터에서 파일을 가져온다 (원격 root 필요)
+- name: Fetch kubeconfig from K3s masters
+  ansible.builtin.fetch:
+    src: /etc/rancher/k3s/k3s.yaml
+    dest: "./configs/kubeconfig-{{ inventory_hostname }}.yaml"
+    flat: yes
+  become: yes 
+  when: inventory_hostname in ['gcp-main', 'aws-sub']
+
+# 6. [로컬 작업] 내 PC에 저장된 파일을 수정한다 (로컬 root 불필요)
+- name: Update server address in kubeconfig
+  delegate_to: localhost
+  ansible.builtin.replace:
+    path: "./configs/kubeconfig-{{ inventory_hostname }}.yaml"
+    regexp: 'https://127.0.0.1:6443'
+    replace: "https://{{ ansible_host }}:6443"
+  become: false  # 💡 "내 PC에서는 sudo 권한 안 쓸 거야"라고 선언
+  when: inventory_hostname in ['gcp-main', 'aws-sub']
