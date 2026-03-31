@@ -48,6 +48,13 @@ services:
     restart: always
 
   discord-bot:
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./configs/kubeconfig-gcp-main.yaml:/root/.kube/config-gcp
+      - ./configs/kubeconfig-aws-sub.yaml:/root/.kube/config-aws
+    environment:
+      - KUBECONFIG_GCP=/root/.kube/config-gcp
+      - KUBECONFIG_AWS=/root/.kube/config-aws
     image: jeongseungmin/chilseongpa-bot_dockerhub:latest
     container_name: chilseongpa-bot
     restart: always
