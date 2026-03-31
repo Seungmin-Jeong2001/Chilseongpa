@@ -1,0 +1,66 @@
+---
+# 1. K8s 모듈로 네임스페이스 생성
+- name: Ensure ktcloud7 namespace exists
+  become: yes 
+  kubernetes.core.k8s:
+    name: ktcloud7
+    api_version: v1
+    kind: Namespace
+    state: present
+
+
+- name: Create Cloud SQL DB credentials secret
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: cloudsql-db-credentials
+        namespace: "{{ k8s_namespace }}"
+      type: Opaque
+      stringData:
+        DB_USER: "{{ vault_db_user }}"
+        DB_PASSWORD: "{{ vault_db_password }}"
+        DB_NAME: "{{ db_name }}"
+
+- name: Create Cloud SQL SA key secret
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: cloudsql-sa-key
+        namespace: "{{ k8s_namespace }}"
+      type: Opaque
+      data:
+        sa-key.json: "{{ vault_sa_key_b64 }}"
+
+
+# 2. Helm Chart 템플릿 폴더를 타겟 노드의 임시 경로로 복사
+- name: Copy app-chart to target node
+  ansible.builtin.copy:
+    src: app-chart/
+    dest: /tmp/app-chart/
+    mode: '0755'
+
+# 3. Helm 모듈로 앱 배포 (알아서 설치/업데이트 판단)
+- name: Deploy application via Helm module
+  kubernetes.core.helm:
+    name: my-app
+    chart_ref: /tmp/app-chart
+    release_namespace: ktcloud7
+    state: present
+    values_files:
+      - /tmp/app-chart/values.yaml
+    wait: true
+    atomic: true 
+    force: true
+    replace: false
+
+# 4. Ingress 매니페스트 적용
+- name: Apply Ingress manifest
+  kubernetes.core.k8s:
+    src: "/tmp/app-chart/ingress.yaml"
+    state: present
