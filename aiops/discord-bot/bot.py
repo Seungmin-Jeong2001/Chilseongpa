@@ -173,53 +173,112 @@ async def k8s_ps(interaction: discord.Interaction, cluster: app_commands.Choice[
     else:
         await interaction.followup.send(f"☸️ **{cluster.name} 파드 상태 리포트**\n```text\n{result}\n```")
 
-@bot.tree.command(name="logs", description="특정 서비스의 에러 발생 전후 로그를 추적합니다.")
-@app_commands.choices(service=[
-    app_commands.Choice(name="prometheus", value="prometheus"),
-    app_commands.Choice(name="grafana", value="grafana"),
-    app_commands.Choice(name="alertmanager", value="alertmanager"),
-    app_commands.Choice(name="discord-bot", value="chilseongpa-bot")
+# [Command] /k8s_logs - 파드 로그 확인 (핵심 수정 사항)
+@bot.tree.command(name="k8s_logs", description="특정 파드의 최신 로그 20줄을 확인하고 AI 진단을 시작합니다.")
+@app_commands.choices(cluster=[
+    app_commands.Choice(name="GCP Main", value="gcp"),
+    app_commands.Choice(name="AWS Sub", value="aws")
 ])
-async def logs_command(interaction: discord.Interaction, service: app_commands.Choice[str]):
+@app_commands.describe(pod_name="로그를 확인할 파드 이름 (k8s_ps에서 확인)", namespace="네임스페이스 (기본: default)")
+async def k8s_logs(
+    interaction: discord.Interaction, 
+    cluster: app_commands.Choice[str], 
+    pod_name: str, 
+    namespace: str = "default"
+):
     await interaction.response.defer()
+    config = KUBE_CONFIGS.get(cluster.value)
     
-    context = get_error_context(service.value)
+    # 파드 로그 추출 (최신 20줄)
+    logs = run_shell(f"kubectl --kubeconfig={config} logs {pod_name} -n {namespace} --tail=20")
+    
     embed = discord.Embed(
-        title=f"📋 로그 추적 리포트: {service.name}",
-        description=f"최근 발견된 에러 지점 전후의 맥락입니다.",
+        title=f"📋 로그 리포트: {cluster.name}",
+        description=f"**Target:** `{pod_name}` in `{namespace}`",
         color=discord.Color.orange()
     )
-    embed.add_field(name="Log Context", value=f"```text\n{context}\n```", inline=False)
     
-    if "✅" not in context and "❌" not in context:
-        analysis_prompt = f"다음 로그의 에러 원인을 짧게 분석해줘: {context}"
-        try:
-            response = model.generate_content(analysis_prompt)
-            embed.add_field(name="🤖 AI 간이 분석", value=response.text[:1024], inline=False)
-        except:
-            pass
+    # 로그 요약 표시 (글자 수 제한 대응)
+    log_preview = logs if len(logs) < 1000 else f"...(앞부분 생략)...\n{logs[-1000:]}"
+    embed.add_field(name="최신 20줄 로그", value=f"```text\n{log_preview}\n```", inline=False)
+    
+    # AI 진단 버튼이 포함된 View 생성
+    view = LogAnalysisView(cluster.name, pod_name, logs)
+    await interaction.followup.send(embed=embed, view=view)
 
-    await interaction.followup.send(embed=embed)
+# 도커 ps 임 
+# @bot.tree.command(name="logs", description="특정 서비스의 에러 발생 전후 로그를 추적합니다.")
+# @app_commands.choices(service=[
+#     app_commands.Choice(name="prometheus", value="prometheus"),
+#     app_commands.Choice(name="grafana", value="grafana"),
+#     app_commands.Choice(name="alertmanager", value="alertmanager"),
+#     app_commands.Choice(name="discord-bot", value="chilseongpa-bot")
+# ])
+# async def logs_command(interaction: discord.Interaction, service: app_commands.Choice[str]):
+#     await interaction.response.defer()
+    
+#     context = get_error_context(service.value)
+#     embed = discord.Embed(
+#         title=f"📋 로그 추적 리포트: {service.name}",
+#         description=f"최근 발견된 에러 지점 전후의 맥락입니다.",
+#         color=discord.Color.orange()
+#     )
+#     embed.add_field(name="Log Context", value=f"```text\n{context}\n```", inline=False)
+    
+#     if "✅" not in context and "❌" not in context:
+#         analysis_prompt = f"다음 로그의 에러 원인을 짧게 분석해줘: {context}"
+#         try:
+#             response = model.generate_content(analysis_prompt)
+#             embed.add_field(name="🤖 AI 간이 분석", value=response.text[:1024], inline=False)
+#         except:
+#             pass
+
+#     await interaction.followup.send(embed=embed)
 
 @bot.tree.command(name="dashboard", description="관제 대시보드 링크 확인")
 async def dashboard(interaction: discord.Interaction):
     await interaction.response.send_message(f"🚀 **칠성파 대시보드 바로가기:**\n{GRAFANA_URL}")
 
+
+# [Command] /health_danger - 위험 진단
 @bot.tree.command(name="health_danger", description="위험 부위(Critical/Down) 집중 진단")
 async def health_danger(interaction: discord.Interaction):
     await interaction.response.defer()
     try:
+        # 다운된 노드 혹은 고부하 인스턴스 쿼리
         query = 'up == 0 or (1 - avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) > 0.8)'
         resp = requests.get(f"{PROMETHEUS_URL}/api/v1/query", params={'query': query}, timeout=5)
         results = resp.json().get('data', {}).get('result', [])
         
         if not results:
-            await interaction.followup.send("✅ 현재 위험 부위가 없습니다.")
+            await interaction.followup.send("✅ 현재 모든 인프라가 정상 가동 중입니다.")
         else:
-            msg = "⚠️ **[긴급] 위험 부위 진단**\n" + "\n".join([f"- {r['metric'].get('job')} ({r['metric'].get('instance')})" for r in results])
+            msg = "⚠️ **[긴급] 위험 부위 탐지 리포트**\n"
+            for r in results:
+                instance = r['metric'].get('instance', 'N/A')
+                job = r['metric'].get('job', 'N/A')
+                val = r['value'][1]
+                status = "🔴 DOWN" if val == '0' else f"🟡 HIGH LOAD ({float(val)*100:.1f}%)"
+                msg += f"- `{job}` ({instance}): **{status}**\n"
             await interaction.followup.send(msg)
     except Exception as e:
-        await interaction.followup.send(f"❌ 진단 중 오류 발생: {e}")
+        await interaction.followup.send(f"❌ 프로메테우스 쿼리 중 오류 발생: {e}")
+
+# ---------------------------------------------------------
+# 5. 서버 실행 및 Webhook
+# ---------------------------------------------------------
+async def process_alert(status, summary, alert_data):
+    channel = bot.get_channel(CHANNEL_ID)
+    if not channel: return
+    
+    color = discord.Color.red() if status == 'FIRING' else discord.Color.green()
+    embed = discord.Embed(title=f"[{status}] {summary}", color=color)
+    desc = alert_data.get('annotations', {}).get('description', '상세 정보 없음')
+    embed.add_field(name="장애 상세", value=desc, inline=False)
+    
+    # 알람 발생 시 바로 AI 분석을 할 수 있도록 버튼 뷰 포함
+    view = LogAnalysisView("Alertmanager", summary, desc)
+    await channel.send(embed=embed, view=view)
 
 # ---------------------------------------------------------
 # 6. Flask 서버 및 메인 실행
