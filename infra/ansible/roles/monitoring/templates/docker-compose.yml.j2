@@ -27,10 +27,6 @@ services:
     depends_on:
       - prometheus
       - alertmanager
-    environment: # 익명 로그인 권한 부여 
-      - GF_AUTH_ANONYMOUS_ENABLED=true
-      - GF_AUTH_ANONYMOUS_ORG_NAME=Main Org. 
-      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer    
     volumes:
       - {{ storage_setup_enabled | ternary('/var/lib/grafana', './data/grafana') }}:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning

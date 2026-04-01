@@ -65,9 +65,11 @@ def get_error_context(service_name):
 # 3. 통합된 AI 지능형 로그 분석 뷰
 # ---------------------------------------------------------
 class LogAnalysisView(discord.ui.View):
-    def __init__(self, alert_data):
+    def __init__(self, cluster_name, pod_name, log_content): # 인자 3개로 확장
         super().__init__(timeout=None)
-        self.alert_data = alert_data
+        self.cluster_name = cluster_name
+        self.pod_name = pod_name
+        self.log_content = log_content
 
     @discord.ui.button(label="🔍 Gemini SRE 지능형 진단", style=discord.ButtonStyle.primary, custom_id="analyze_logs")
     async def analyze_logs(self, interaction: discord.Interaction, button: discord.ui.Button):
