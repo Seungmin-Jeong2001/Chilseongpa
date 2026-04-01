@@ -1,0 +1,23 @@
+---
+- name: 시스템 패키지 업데이트 및 필수 도구 설치
+  apt:
+    name:
+      - apt-transport-https
+      - python3-pip
+    state: present
+    update_cache: yes
+
+- name: Helm 설치
+  shell: |
+    curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+    chmod 700 get_helm.sh
+    ./get_helm.sh
+  args:
+    creates: /usr/local/bin/helm
+
+- name: K8s Ansible 모듈을 위한 Python 패키지 설치
+  apt:
+    name:
+      - python3-kubernetes
+      - python3-yaml
+    state: present

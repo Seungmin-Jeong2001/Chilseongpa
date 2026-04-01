@@ -1,0 +1,14 @@
+backend:
+  image: "docker.io/jeongseungmin/chilseongpa_dockerhub"
+  tag: "backend-prod-v1.0.15"
+  pullPolicy: IfNotPresent
+  port: 8000
+
+frontend:
+  image: "docker.io/jeongseungmin/chilseongpa_dockerhub"
+  tag: "frontend-prod-v1.0.6"
+  pullPolicy: IfNotPresent
+  port: 80
+
+cloudsql:
+  connectionName: "chilseongpa:asia-northeast3:hybrid-primary-db"
