@@ -15,6 +15,31 @@
     state: started
     enabled: yes
 
+# [추가] kube-state-metrics 설치
+# node-exporter만으로는 Pod/Container 상태 수집 불가
+# GCP(Primary)/AWS(Fallback) 모두 Pod/Container 상태 모니터링 필요
+- name: Install kube-state-metrics
+  ansible.builtin.shell: |
+    kubectl apply -k https://github.com/kubernetes/kube-state-metrics/examples/standard
+    kubectl delete svc kube-state-metrics -n kube-system --ignore-not-found
+    kubectl apply -f - <<EOF
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: kube-state-metrics
+      namespace: kube-system
+    spec:
+      type: NodePort
+      selector:
+        app.kubernetes.io/name: kube-state-metrics
+      ports:
+        - port: 8080
+          targetPort: 8080
+          nodePort: 30080
+    EOF
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  changed_when: false
 - name: kubeconfig 권한 설정
   file:
     path: /etc/rancher/k3s/k3s.yaml

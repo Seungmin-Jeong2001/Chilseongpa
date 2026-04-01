@@ -43,4 +43,18 @@ services:
       - "9093:9093"
     restart: always
 
+  # [추가] GCP Cloud SQL 메트릭을 GCP Monitoring API에서 수집해 Prometheus로 노출
+  # 호스트 포트 미노출 - prometheus와 같은 docker network 내에서 서비스명으로 직접 통신
+  stackdriver-exporter:
+    image: prometheuscommunity/stackdriver-exporter:latest
+    container_name: stackdriver-exporter
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/etc/gcp/gcp-sa-key.json
+    command:
+      - "--google.project-id={{ gcp_project_id }}"
+      - "--monitoring.metrics-type-prefixes=cloudsql.googleapis.com"
+    volumes:
+      - /home/ubuntu/gcp-sa-key.json:/etc/gcp/gcp-sa-key.json:ro
+    restart: always
+
  
