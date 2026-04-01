@@ -1,0 +1,33 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hybrid-api-ingress
+  namespace: ktcloud7 
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  rules:
+    - host: api.hybrid-test.local # 나중에 진짜 도메인으로 변경해야함
+      http:
+        paths:
+        - path: /api
+          pathType: Prefix
+          backend:
+            service:
+              name: backend-svc
+              port:
+                number: 8000
+        - path: /health 
+          pathType: Prefix
+          backend:
+            service:
+              name: backend-svc
+              port:
+                number: 8000
+        - path: /
+          pathType: Prefix
+          backend:
+            service:
+              name: frontend-svc
+              port:
+                number: 80

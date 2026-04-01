@@ -1,0 +1,7 @@
+fastapi 
+uvicorn 
+prometheus-fastapi-instrumentator 
+prometheus-client 
+sqlalchemy
+pymysql
+cryptography

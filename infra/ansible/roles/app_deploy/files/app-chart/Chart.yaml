@@ -1,0 +1,6 @@
+apiVersion: v2
+name: KTcloud-team7
+description: 백엔드와 프론트엔드를 통합 배포하는 Helm Chart
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
