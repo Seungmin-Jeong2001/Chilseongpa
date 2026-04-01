@@ -1,6 +1,5 @@
-# 💡 'version' 속성은 최신 Docker Compose에서 더 이상 필요하지 않으므로 제거합니다.
-
 services:
+  # 1. Prometheus: 메트릭 수집 및 저장
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
@@ -18,9 +17,10 @@ services:
       - "--storage.tsdb.retention.time=15d"
       - "--web.enable-lifecycle"
     networks:
-      - monitoring-network # 💡 네트워크 추가
+      - monitoring-network
     restart: always
 
+  # 2. Grafana: 데이터 시각화 대시보드
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
@@ -33,9 +33,10 @@ services:
     ports:
       - "3000:3000"
     networks:
-      - monitoring-network # 💡 네트워크 추가
+      - monitoring-network
     restart: always
 
+  # 3. Alertmanager: 알람 라우팅 및 관리
   alertmanager:
     image: prom/alertmanager:latest
     container_name: alertmanager
@@ -44,18 +45,33 @@ services:
     ports:
       - "9093:9093"
     networks:
-      - monitoring-network # 💡 네트워크 추가
+      - monitoring-network
     restart: always
 
+  # 4. Stackdriver Exporter: GCP Cloud SQL 메트릭 수집
+  stackdriver-exporter:
+    image: prometheuscommunity/stackdriver-exporter:latest
+    container_name: stackdriver-exporter
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/etc/gcp/gcp-sa-key.json
+    command:
+      - "--google.project-id={{ gcp_project_id }}"
+      - "--monitoring.metrics-type-prefixes=cloudsql.googleapis.com"
+    volumes:
+      - /home/ubuntu/gcp-sa-key.json:/etc/gcp/gcp-sa-key.json:ro
+    networks:
+      - monitoring-network
+    restart: always
+
+  # 5. Discord Bot: AI 진단 및 알람 전송 봇
   discord-bot:
+    image: jeongseungmin/chilseongpa-bot_dockerhub:latest
+    container_name: chilseongpa-bot
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./configs/kubeconfig-gcp-main.yaml:/root/.kube/config-gcp
       - ./configs/kubeconfig-aws-sub.yaml:/root/.kube/config-aws
       - ./configs:/root/.kube/
-    image: jeongseungmin/chilseongpa-bot_dockerhub:latest
-    container_name: chilseongpa-bot
-    restart: always
     environment:
       - DISCORD_BOT_TOKEN={{ discord_bot_token }}
       - DISCORD_CHANNEL_ID={{ discord_channel_id }}
@@ -68,9 +84,10 @@ services:
     networks:
       - monitoring-network
     depends_on:
-      - alertmanager # 💡 웹훅을 받을 대상인 alertmanager가 먼저 뜨도록 설정
+      - alertmanager
+    restart: always
 
+# 네트워크 설정: 모든 서비스가 브리지 네트워크를 통해 내부 통신
 networks:
   monitoring-network:
-    # 💡 external: true를 제거하여 컴포즈가 네트워크를 직접 만들게 합니다.
     driver: bridge

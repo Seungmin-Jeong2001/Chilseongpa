@@ -3,7 +3,6 @@ storage_setup_enabled: true # EBS 볼륨을 사용할지 여부 (true/false) fal
 ebs_device_name: "/dev/nvme1n1"
 monitoring_base_dir: "/home/ubuntu/monitoring"
 
-
 # 2. 템플릿 경로 설정 (tasks/main.yml에서 사용)
 prometheus_config_src: "prometheus.yml.j2"
 alertmanager_config_src: "alertmanager.yml.j2"
@@ -16,10 +15,14 @@ config_render_mode: "template"
 # 4. 알림 설정
 alert_webhook_url: "http://alert-bot:5000/webhook"
 
-
 # 디스코드 개발자 포털에서 가져온 값들
 discord_bot_token: "{{ lookup('env', 'DISCORD_BOT_TOKEN') }}"
 discord_channel_id: "{{ lookup('env', 'DISCORD_CHANNEL_ID') }}"
 
 # 구글 AI 스튜디오에서 가져온 값
 gemini_api_key: "{{ lookup('env', 'GEMINI_API_KEY') }}"
+
+# Cloud SQL 연결 정보
+db_name: "hybrid_app_db"
+cloudsql_connection_name: "chilseongpa:asia-northeast3:hybrid-primary-db"
+k8s_namespace: "ktcloud7"      
