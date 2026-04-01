@@ -3,9 +3,9 @@ import asyncio
 import discord
 import requests
 import subprocess
-import re
 import io
-import google.generativeai as genai
+import time
+from google import genai
 from discord import app_commands
 from flask import Flask, request
 from threading import Thread
@@ -19,19 +19,22 @@ TOKEN = os.getenv('DISCORD_BOT_TOKEN')
 CHANNEL_ID = int(os.getenv('DISCORD_CHANNEL_ID', '0'))
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
-GRAFANA_URL = os.getenv('GRAFANA_URL', 'https://grafana.bucheongoyangijanggun.com/d/chilseongpa/ecb9a0-ec84b1-ed8c8c?orgId=1&from=now-1h&to=now&timezone=Asia%2FSeoul&var-datasource=PBFA97CFB590B2093&var-cluster=$__all&var-namespace=$__all&var-job=$__all&refresh=30s')
+# 그라파나 및 프로메테우스 설정
+GRAFANA_URL = os.getenv('GRAFANA_URL', 'https://grafana.bucheongoyangijanggun.com/d/chilseongpa/ecb9a0-ec84b1-ed8c8c?orgId=1&from=now-1h&to=now&timezone=Asia%2FSeoul')
 PROMETHEUS_URL = "http://prometheus:9090"
 
+# Kubeconfig 경로 (GCP/AWS 하이브리드)
 KUBE_CONFIGS = {
     "gcp": os.getenv('KUBECONFIG_GCP', '/root/.kube/config-gcp'),
     "aws": os.getenv('KUBECONFIG_AWS', '/root/.kube/config-aws')
 }
 
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+# 최신 Gemini AI SDK 설정 (google-genai)
+client = genai.Client(api_key=GEMINI_API_KEY)
+MODEL_ID = "gemini-2.0-flash" # 최신 안정화 모델로 설정
 
 # ---------------------------------------------------------
-# 2. 보조 함수
+# 2. 보조 함수 (쉘 명령어 및 API 호출)
 # ---------------------------------------------------------
 def run_shell(command):
     """시스템 명령어를 실행하고 결과를 반환합니다."""
@@ -41,98 +44,90 @@ def run_shell(command):
         )
         return result if result.strip() else "✅ 명령 실행 성공 (응답 메시지 없음)"
     except subprocess.CalledProcessError as e:
-        if e.returncode == 127:
-            return "❌ 에러: 컨테이너 내부에 명령어가 설치되지 않았습니다. (Dockerfile 확인 필요)"
-        return f"❌ 실행 실패:\n```text\n{e.output}```"
+        return f"❌ 실행 실패 (Exit Code {e.returncode}):\n```text\n{e.output}```"
     except Exception as e:
         return f"⚠️ 예외 발생: {str(e)}"
 
-def get_error_context(service_name):
-    """특정 서비스의 최근 로그를 가져옵니다. (환경에 맞게 명령어 수정 필요)"""
-    # 예시 1: Docker 컨테이너인 경우
-    # cmd = f"docker logs --tail 30 {service_name}"
-    
-    # 예시 2: systemd 서비스인 경우 (기본 적용)
-    cmd = f"journalctl -u {service_name} -n 30 --no-pager"
-    
-    result = run_shell(cmd)
-    # 디스코드 임베드 제한(1024자)을 넘지 않도록 뒷부분만 자르기
-    if len(result) > 1000:
-        return f"...(생략)...\n{result[-1000:]}"
-    return result
+async def generate_content_with_retry(prompt):
+    """지수 백오프를 적용한 Gemini API 호출 함수 (최대 5회 재시도)"""
+    retries = 5
+    for i in range(retries):
+        try:
+            response = client.models.generate_content(
+                model=MODEL_ID,
+                contents=prompt
+            )
+            return response.text
+        except Exception as e:
+            # 429 오류(할당량 초과) 발생 시 재시도 로직
+            if "429" in str(e) and i < retries - 1:
+                wait_time = 2 ** i # 1s, 2s, 4s, 8s, 16s 대기
+                await asyncio.sleep(wait_time)
+                continue
+            raise e # 마지막 시도까지 실패하거나 다른 오류면 발생시킴
 
 # ---------------------------------------------------------
-# 3. 통합된 AI 지능형 로그 분석 뷰
+# 3. AI 진단 뷰 (LogAnalysisView)
 # ---------------------------------------------------------
 class LogAnalysisView(discord.ui.View):
-    def __init__(self, cluster_name, pod_name, log_content): # 인자 3개로 확장
+    def __init__(self, cluster_name, pod_name, log_content):
         super().__init__(timeout=None)
         self.cluster_name = cluster_name
         self.pod_name = pod_name
         self.log_content = log_content
 
-    @discord.ui.button(label="🔍 Gemini SRE 지능형 진단", style=discord.ButtonStyle.primary, custom_id="analyze_logs")
+    @discord.ui.button(label="🔍 Gemini SRE 지능형 진단", style=discord.ButtonStyle.primary, custom_id="analyze_k8s_logs")
     async def analyze_logs(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # 1. 즉시 응답 지연 (Discord 3초 제한 방지)
         await interaction.response.defer()
         
-        summary = self.alert_data.get('annotations', {}).get('summary', '정보 없음')
-        description = self.alert_data.get('annotations', {}).get('description', '정보 없음')
-        instance = self.alert_data.get('labels', {}).get('instance', 'unknown')
-        cluster = self.alert_data.get('labels', {}).get('cluster', 'Hybrid')
-        
+        # 2. 사용자에게 진단 시작 알림 보내기 (상태 피드백)
+        status_msg = await interaction.followup.send("🤖 **Gemini SRE가 로그를 분석 중입니다...** 잠시만 기다려 주세요! ⏳")
+
+        # 3. 프롬프트 구성
         prompt = f"""
         당신은 AWS/GCP 하이브리드 인프라를 관리하는 시니어 SRE 전문가입니다.
-        현재 {cluster} 클러스터의 {instance} 인스턴스에서 장애가 발생했습니다.
+        현재 '{self.cluster_name}' 환경의 '{self.pod_name}'에서 장애가 의심됩니다.
 
-        [장애 정보]
-        - 요약: {summary}
-        - 상세: {description}
+        [수집된 로그 데이터]
+        {self.log_content}
 
         [요청 사항]
-        1. **원인 진단**: 로그와 장애 내용을 대조하여 원인을 한 문장으로 진단하세요.
-        2. **즉각 조치**: 해결을 위해 터미널에서 즉시 실행할 명령어(kubectl, systemctl 등)를 제시하세요.
-        3. **AIOps 예방**: 재발 방지를 위한 Ansible/Terraform 보완책을 제안하세요.
-        
-        답변은 한국어로, 이모지를 섞어 마크다운 형식으로 작성하세요.
+        1. **원인 진단**: 로그를 분석하여 현재 상태와 문제 원인을 진단하세요.
+        2. **즉각 조치**: 해결을 위해 터미널에서 즉시 실행할 명령어(kubectl 등)를 제시하세요.
+        3. **재발 방지**: 향후 동일 장애를 방지하기 위한 인프라 보안점을 제안하세요.
+
+        [출력 규칙]
+        - 한국어로, 이모지를 섞어 마크다운 형식으로 답변하세요.
+        - 답변이 2000자를 넘을 경우 가독성을 위해 섹션을 명확히 나누어 작성하세요.
         """
+
         try:
-            response = model.generate_content(prompt)
-            await interaction.followup.send(f"🤖 **Gemini SRE 진단 리포트**\n{response.text}")
+            # 4. 재시도 로직이 포함된 API 호출
+            ai_text = await generate_content_with_retry(prompt)
+
+            # 5. 글자 수 제한(2000자) 대응 로직
+            header = f"🤖 **Gemini SRE 진단 리포트 ({self.pod_name})**\n"
+            full_response = header + ai_text
+
+            if len(full_response) <= 2000:
+                await interaction.followup.send(full_response)
+            else:
+                # 메시지를 1900자 단위로 쪼개서 전송
+                chunks = [full_response[i:i+1900] for i in range(0, len(full_response), 1900)]
+                for n, chunk in enumerate(chunks):
+                    await interaction.followup.send(f"(파트 {n+1}/{len(chunks)})\n{chunk}")
+            
         except Exception as e:
-            await interaction.followup.send(f"⚠️ AI 분석 실패: {e}")
+            error_msg = str(e)
+            if "429" in error_msg:
+                friendly_error = "⚠️ **Gemini API 할당량이 초과되었습니다.**\n무료 티어 제한으로 인해 잠시 후(약 1분 뒤) 다시 시도해 주세요. 🙇‍♂️"
+            else:
+                friendly_error = f"⚠️ AI 분석 중 오류 발생: {error_msg[:1500]}"
+            await interaction.followup.send(friendly_error)
 
 # ---------------------------------------------------------
-# 4. AIOps 자가 치유 및 Webhook 처리
-# ---------------------------------------------------------
-async def trigger_gcp_recovery(alert_data):
-    cluster = alert_data.get('labels', {}).get('cluster', 'unknown')
-    alert_name = alert_data.get('alertname')
-    
-    if cluster == 'gcp' and alert_name == 'PrometheusTargetDown':
-        channel = bot.get_channel(CHANNEL_ID)
-        if channel:
-            await channel.send(f"🚨 **[AIOps 긴급 상황]** GCP 인프라 다운 감지! 자가 치유 복구 프로세스를 시작합니다.")
-            await asyncio.sleep(3) 
-            # 여기에 실제 복구 쉘 스크립트 실행 로직 추가 가능
-            await channel.send("✅ **[복구 성공]** GCP 인프라 복구 프로세스가 완료되었습니다. 시스템 정상화 여부를 모니터링 중입니다.")
-
-async def process_alert(status, summary, alert_data):
-    channel = bot.get_channel(CHANNEL_ID)
-    if not channel: return
-
-    severity = alert_data.get('labels', {}).get('severity', 'warning')
-    if status == 'FIRING' and severity == 'critical':
-        asyncio.create_task(trigger_gcp_recovery(alert_data))
-
-    color = discord.Color.red() if status == 'FIRING' else discord.Color.green()
-    embed = discord.Embed(title=f"[{status}] {summary}", color=color)
-    embed.add_field(name="상세 내용", value=alert_data.get('annotations', {}).get('description', 'N/A'), inline=False)
-    
-    view = LogAnalysisView(alert_data)
-    await channel.send(embed=embed, view=view)
-
-# ---------------------------------------------------------
-# 5. 디스코드 봇 설정 및 슬래시 명령어
+# 4. 디스코드 봇 클래스 및 슬래시 명령어
 # ---------------------------------------------------------
 class ChilseongpaBot(discord.Client):
     def __init__(self):
@@ -141,23 +136,21 @@ class ChilseongpaBot(discord.Client):
 
     async def setup_hook(self):
         await self.tree.sync()
-        print("🚀 [System] 모든 슬래시 커맨드가 동기화되었습니다.")
-
-    async def on_ready(self):
-        print(f"✅ [System] {self.user} 로그인 완료 및 준비됨.")
+        print("🚀 [System] 모든 K8s 관제 커맨드가 동기화되었습니다.")
 
 bot = ChilseongpaBot()
 
-@bot.tree.command(name="help", description="칠성파 봇이 사용 가능한 모든 명령어를 안내합니다.")
+# [Command] /help
+@bot.tree.command(name="help", description="칠성파 봇의 명령어 가이드를 확인합니다.")
 async def help_command(interaction: discord.Interaction):
     embed = discord.Embed(title="📖 Chilseongpa AIOps 가이드", color=discord.Color.blue())
-    embed.add_field(name="🌐 하이브리드 관제", value="`/k8s_ps`: GCP/AWS 파드 상태\n`/k8s_logs`: 원격 앱 로그 확인", inline=False)
-    embed.add_field(name="🖥️ 모니터링 서버", value="`/ps`: 호스트 컨테이너 상태\n`/logs`: 관리 도구 로그 확인", inline=False)
-    embed.add_field(name="📊 기타 도구", value="`/dashboard`: 그라파나 이동\n`/health_danger`: 위험 부위 진단", inline=False)
+    embed.add_field(name="☸️ K8s 하이브리드 관제", value="`/k8s_ps`: GCP/AWS 전체 파드 상태 조회\n`/k8s_logs`: 파드 로그 검색 및 AI 지능형 진단", inline=False)
+    embed.add_field(name="📊 모니터링", value="`/dashboard`: 그라파나 이동\n`/health_danger`: 프로메테우스 위험 부위 진단", inline=False)
     embed.set_footer(text="Chilseongpa Project | AI Powered Operations")
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="k8s_ps", description="GCP/AWS 클러스터의 파드 상태를 전체 조회합니다.")
+# [Command] /k8s_ps
+@bot.tree.command(name="k8s_ps", description="클러스터의 파드 상태를 조회합니다.")
 @app_commands.choices(cluster=[
     app_commands.Choice(name="GCP Main", value="gcp"),
     app_commands.Choice(name="AWS Sub", value="aws")
@@ -167,21 +160,21 @@ async def k8s_ps(interaction: discord.Interaction, cluster: app_commands.Choice[
     config = KUBE_CONFIGS.get(cluster.value)
     result = run_shell(f"kubectl --kubeconfig={config} get pods -A")
     
-    # 결과물이 디스코드 글자 수 제한을 초과하는 경우 텍스트 파일로 전송
+    header = f"☸️ **{cluster.name} 파드 상태 리포트**\n"
     if len(result) > 1900:
         with io.StringIO(result) as f:
             file = discord.File(f, filename=f"{cluster.value}_pods.txt")
-            await interaction.followup.send(f"☸️ **{cluster.name} 파드 상태 리포트**\n(출력 결과가 너무 길어 텍스트 파일로 첨부합니다.)", file=file)
+            await interaction.followup.send(header + "(결과가 길어 파일로 전송합니다.)", file=file)
     else:
-        await interaction.followup.send(f"☸️ **{cluster.name} 파드 상태 리포트**\n```text\n{result}\n```")
+        await interaction.followup.send(f"{header}```text\n{result}```")
 
-# [Command] /k8s_logs - 파드 로그 확인 (핵심 수정 사항)
-@bot.tree.command(name="k8s_logs", description="특정 파드의 최신 로그 20줄을 확인하고 AI 진단을 시작합니다.")
+# [Command] /k8s_logs
+@bot.tree.command(name="k8s_logs", description="파드의 최신 로그 20줄을 확인하고 AI 진단을 시작합니다.")
 @app_commands.choices(cluster=[
     app_commands.Choice(name="GCP Main", value="gcp"),
     app_commands.Choice(name="AWS Sub", value="aws")
 ])
-@app_commands.describe(pod_name="로그를 확인할 파드 이름 (k8s_ps에서 확인)", namespace="네임스페이스 (기본: default)")
+@app_commands.describe(pod_name="로그를 확인할 파드 이름", namespace="네임스페이스 (기본: default)")
 async def k8s_logs(
     interaction: discord.Interaction, 
     cluster: app_commands.Choice[str], 
@@ -196,78 +189,48 @@ async def k8s_logs(
     
     embed = discord.Embed(
         title=f"📋 로그 리포트: {cluster.name}",
-        description=f"**Target:** `{pod_name}` in `{namespace}`",
+        description=f"**Target:** `{pod_name}` (Namespace: `{namespace}`)",
         color=discord.Color.orange()
     )
     
-    # 로그 요약 표시 (글자 수 제한 대응)
-    log_preview = logs if len(logs) < 1000 else f"...(앞부분 생략)...\n{logs[-1000:]}"
-    embed.add_field(name="최신 20줄 로그", value=f"```text\n{log_preview}\n```", inline=False)
+    # 디스코드 필드 값(1024자 제한) 방어
+    safe_logs = logs if len(logs) <= 1000 else f"...(로그 초과로 생략)...\n{logs[-950:]}"
+    embed.add_field(name="최신 20줄 로그", value=f"```text\n{safe_logs}\n```", inline=False)
     
-    # AI 진단 버튼이 포함된 View 생성
+    # 뷰 생성 및 대시보드 버튼 연동
     view = LogAnalysisView(cluster.name, pod_name, logs)
+    view.add_item(discord.ui.Button(label="📊 그라파나 대시보드", url=GRAFANA_URL, style=discord.ButtonStyle.link))
+    
     await interaction.followup.send(embed=embed, view=view)
 
-# 도커 ps 임 
-# @bot.tree.command(name="logs", description="특정 서비스의 에러 발생 전후 로그를 추적합니다.")
-# @app_commands.choices(service=[
-#     app_commands.Choice(name="prometheus", value="prometheus"),
-#     app_commands.Choice(name="grafana", value="grafana"),
-#     app_commands.Choice(name="alertmanager", value="alertmanager"),
-#     app_commands.Choice(name="discord-bot", value="chilseongpa-bot")
-# ])
-# async def logs_command(interaction: discord.Interaction, service: app_commands.Choice[str]):
-#     await interaction.response.defer()
-    
-#     context = get_error_context(service.value)
-#     embed = discord.Embed(
-#         title=f"📋 로그 추적 리포트: {service.name}",
-#         description=f"최근 발견된 에러 지점 전후의 맥락입니다.",
-#         color=discord.Color.orange()
-#     )
-#     embed.add_field(name="Log Context", value=f"```text\n{context}\n```", inline=False)
-    
-#     if "✅" not in context and "❌" not in context:
-#         analysis_prompt = f"다음 로그의 에러 원인을 짧게 분석해줘: {context}"
-#         try:
-#             response = model.generate_content(analysis_prompt)
-#             embed.add_field(name="🤖 AI 간이 분석", value=response.text[:1024], inline=False)
-#         except:
-#             pass
-
-#     await interaction.followup.send(embed=embed)
-
+# [Command] /dashboard
 @bot.tree.command(name="dashboard", description="관제 대시보드 링크 확인")
 async def dashboard(interaction: discord.Interaction):
-    await interaction.response.send_message(f"🚀 **칠성파 대시보드 바로가기:**\n{GRAFANA_URL}")
+    await interaction.response.send_message(f"🚀 **칠성파 대시보드:** {GRAFANA_URL}")
 
-
-# [Command] /health_danger - 위험 진단
+# [Command] /health_danger
 @bot.tree.command(name="health_danger", description="위험 부위(Critical/Down) 집중 진단")
 async def health_danger(interaction: discord.Interaction):
     await interaction.response.defer()
     try:
-        # 다운된 노드 혹은 고부하 인스턴스 쿼리
         query = 'up == 0 or (1 - avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) > 0.8)'
         resp = requests.get(f"{PROMETHEUS_URL}/api/v1/query", params={'query': query}, timeout=5)
         results = resp.json().get('data', {}).get('result', [])
         
         if not results:
-            await interaction.followup.send("✅ 현재 모든 인프라가 정상 가동 중입니다.")
+            await interaction.followup.send("✅ 현재 모든 시스템이 정상 가동 중입니다.")
         else:
             msg = "⚠️ **[긴급] 위험 부위 탐지 리포트**\n"
             for r in results:
                 instance = r['metric'].get('instance', 'N/A')
                 job = r['metric'].get('job', 'N/A')
-                val = r['value'][1]
-                status = "🔴 DOWN" if val == '0' else f"🟡 HIGH LOAD ({float(val)*100:.1f}%)"
-                msg += f"- `{job}` ({instance}): **{status}**\n"
+                msg += f"- `{job}` ({instance})\n"
             await interaction.followup.send(msg)
     except Exception as e:
-        await interaction.followup.send(f"❌ 프로메테우스 쿼리 중 오류 발생: {e}")
+        await interaction.followup.send(f"❌ 진단 중 오류 발생: {e}")
 
 # ---------------------------------------------------------
-# 5. 서버 실행 및 Webhook
+# 5. 서버 실행 및 Webhook 처리 (Alertmanager 연동)
 # ---------------------------------------------------------
 async def process_alert(status, summary, alert_data):
     channel = bot.get_channel(CHANNEL_ID)
@@ -275,20 +238,20 @@ async def process_alert(status, summary, alert_data):
     
     color = discord.Color.red() if status == 'FIRING' else discord.Color.green()
     embed = discord.Embed(title=f"[{status}] {summary}", color=color)
-    desc = alert_data.get('annotations', {}).get('description', '상세 정보 없음')
-    embed.add_field(name="장애 상세", value=desc, inline=False)
+    desc = alert_data.get('annotations', {}).get('description', '정보 없음')
     
-    # 알람 발생 시 바로 AI 분석을 할 수 있도록 버튼 뷰 포함
+    # 상세 내용도 1024자 제한 방어
+    safe_desc = desc if len(desc) <= 1000 else desc[:1000]
+    embed.add_field(name="장애 상세", value=safe_desc, inline=False)
+    
+    # 알림 발생 시에도 AI 진단 버튼 제공
     view = LogAnalysisView("Alertmanager", summary, desc)
+    view.add_item(discord.ui.Button(label="🚀 대시보드 이동", url=GRAFANA_URL, style=discord.ButtonStyle.link))
     await channel.send(embed=embed, view=view)
 
-# ---------------------------------------------------------
-# 6. Flask 서버 및 메인 실행
-# ---------------------------------------------------------
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.json
-    # Flask 쓰레드에서 봇의 이벤트 루프로 안전하게 코루틴 전달
     loop = bot.loop
     if not loop or not loop.is_running():
         return "Bot is not ready", 503
@@ -297,14 +260,12 @@ def webhook():
         status = alert.get('status', 'firing').upper()
         summary = alert.get('annotations', {}).get('summary', 'No summary')
         asyncio.run_coroutine_threadsafe(process_alert(status, summary, alert), loop)
-    
     return "OK", 200
 
 def run_flask():
     app.run(host='0.0.0.0', port=5000)
 
 if __name__ == '__main__':
-    # Flask 서버를 데몬 쓰레드로 실행하여 봇 종료 시 함께 종료되도록 설정
-    flask_thread = Thread(target=run_flask, daemon=True)
-    flask_thread.start()
+    # Flask 서버를 데몬 쓰레드로 실행
+    Thread(target=run_flask, daemon=True).start()
     bot.run(TOKEN)

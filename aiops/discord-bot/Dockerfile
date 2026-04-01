@@ -1,5 +1,5 @@
-# 1. 가벼운 파이썬 3.10 이미지 사용
-FROM python:3.10-slim
+# 1. 가벼운 파이썬 3.11 이미지 사용
+FROM python:3.11-slim
 
 # 2. 작업 디렉토리 설정
 WORKDIR /app
