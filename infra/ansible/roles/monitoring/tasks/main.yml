@@ -158,27 +158,6 @@
   ansible.builtin.command: docker compose version
   changed_when: false            # Compose Plugin 설치 여부 확인용 조회 명령
 
-- name: Start monitoring stack
-  community.docker.docker_compose_v2:
-    project_src: "{{ monitoring_base_dir }}" # docker-compose.yml이 위치한 디렉토리
-    state: present               # docker compose up과 동일하게 서비스 생성/실행
-
-
-#  기존 프로세스 종료 - cloudflared access proxy와 Cloud SQL Auth Proxy는 설정 변경 시 재시작이 필요하므로, 기존에 실행 중인 프로세스가 있다면 종료 후 새로 띄우도록 합니다.
-- name: Stop existing cloudflared access proxy
-  ansible.builtin.shell: "pkill -f '[c]loudflared access tcp --hostname gcp-metrics' || true"
-  changed_when: false
-
-# cloudflared access proxy 실행
-- name: Run cloudflared access proxy for GCP metrics
-  ansible.builtin.shell: |
-    nohup cloudflared access tcp \
-      --hostname gcp-metrics.{{ app_domain }} \
-      --listener 0.0.0.0:9101 \
-      --service-token-id {{ cf_client_id }} \
-      --service-token-secret {{ cf_client_secret }} > /dev/null 2>&1 &
-  changed_when: false
-
 # Cloud SQL Auth Proxy 설치 및 실행
 - name: Download Cloud SQL Auth Proxy binary
   get_url:
@@ -186,22 +165,65 @@
     dest: /usr/local/bin/cloud-sql-proxy
     mode: '0755'
 
+# [수정] docker compose up 이전으로 이동
+# stackdriver-exporter가 컨테이너 시작 시 SA 키를 마운트하므로,
+# 파일이 없으면 Docker가 해당 경로를 디렉토리로 생성해 credentials 읽기 실패
 - name: Copy GCP Service Account Key
   copy:
     src: gcp-sa-key.json
     dest: /home/ubuntu/gcp-sa-key.json
     mode: '0600'
 
+- name: Start monitoring stack
+  community.docker.docker_compose_v2:
+    project_src: "{{ monitoring_base_dir }}" # docker-compose.yml이 위치한 디렉토리
+    state: present               # docker compose up과 동일하게 서비스 생성/실행
+
+
+# 기존 프로세스 종료 - cloudflared access proxy는 설정 변경 시 재시작이 필요하므로
+# 기존에 실행 중인 프로세스가 있다면 종료 후 새로 띄웁니다
+- name: Stop existing cloudflared access proxies
+  ansible.builtin.shell: "pkill -f '[c]loudflared access tcp' || true"
+  changed_when: false
+
+# cloudflared access proxy 실행 - GCP node exporter (CPU/Memory)
+- name: Run cloudflared access proxy for GCP metrics
+  ansible.builtin.shell: |
+    nohup cloudflared access tcp \
+      --hostname gcp-metrics.bucheongoyangijanggun.com \
+      --listener 0.0.0.0:9101 \
+      --service-token-id {{ cf_client_id }} \
+      --service-token-secret {{ cf_client_secret }} > /dev/null 2>&1 &
+  changed_when: false
+
+# [추가] cloudflared access proxy 실행 - GCP 앱 메트릭 (HTTP 요청수/응답시간)
+- name: Run cloudflared access proxy for GCP app metrics
+  ansible.builtin.shell: |
+    nohup cloudflared access tcp \
+      --hostname gcp-app.bucheongoyangijanggun.com \
+      --listener 0.0.0.0:9102 \
+      --service-token-id {{ cf_client_id }} \
+      --service-token-secret {{ cf_client_secret }} > /dev/null 2>&1 &
+  changed_when: false
+
+# [추가] cloudflared access proxy 실행 - GCP kube-state-metrics (Pod/Container 상태)
+- name: Run cloudflared access proxy for GCP kube-state-metrics
+  ansible.builtin.shell: |
+    nohup cloudflared access tcp \
+      --hostname gcp-ksm.bucheongoyangijanggun.com \
+      --listener 0.0.0.0:9103 \
+      --service-token-id {{ cf_client_id }} \
+      --service-token-secret {{ cf_client_secret }} > /dev/null 2>&1 &
+  changed_when: false
+
 - name: Run Cloud SQL Auth Proxy
   ansible.builtin.shell: |
     # 💡 기존 프로세스가 있다면 죽이고 새로 띄웁니다 (설정 변경 반영)
     pkill cloud-sql-proxy || true
+    # [수정] --prometheus --http-address --http-port 제거 - 메트릭은 stackdriver-exporter가 담당
     nohup /usr/local/bin/cloud-sql-proxy \
       --address 0.0.0.0 \
       --port 9255 \
-      --http-address 0.0.0.0 \
-      --http-port 9091 \ 
-      --prometheus \
       --credentials-file /home/ubuntu/gcp-sa-key.json \
       {{ db_instance_name }} > /dev/null 2>&1 &
   changed_when: false
