@@ -67,7 +67,36 @@
     owner: "{{ ansible_user }}"   # 운영 사용자 기준 소유권 설정
     group: "{{ ansible_user }}"
     mode: '0755'
+- name: Create monitoring directory
+  ansible.builtin.file:
+    path: "{{ monitoring_base_dir }}"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0755'
 
+# ---------------------------------------------------------
+# [추가] Kubeconfig 저장을 위한 디렉토리 생성 및 배달
+# ---------------------------------------------------------
+- name: Ensure configs directory exists
+  ansible.builtin.file:
+    path: "{{ monitoring_base_dir }}/configs"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0755'
+
+- name: Delivery kubeconfigs to Monitoring VM
+  ansible.builtin.copy:
+    src: "./configs/kubeconfig-{{ item }}.yaml"
+    dest: "{{ monitoring_base_dir }}/configs/kubeconfig-{{ item }}.yaml"
+    mode: '0600'
+  loop:
+    - gcp-main
+    - aws-sub
+  # 💡 인벤토리의 aws-monitor 호스트에서만 실행되도록 보장
+  when: inventory_hostname == 'aws-monitor'
+  
 - name: Render Prometheus config from template
   ansible.builtin.template:
     src: "{{ prometheus_config_src }}"
@@ -178,6 +207,7 @@
   community.docker.docker_compose_v2:
     project_src: "{{ monitoring_base_dir }}" # docker-compose.yml이 위치한 디렉토리
     state: present               # docker compose up과 동일하게 서비스 생성/실행
+    pull: always                # 이미지가 최신인지 항상 확인하여 pull 수행
 
 
 # 기존 프로세스 종료 - cloudflared access proxy는 설정 변경 시 재시작이 필요하므로

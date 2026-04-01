@@ -1,6 +1,5 @@
-version: '3.8'
-
 services:
+  # 1. Prometheus: 메트릭 수집 및 저장
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
@@ -9,7 +8,6 @@ services:
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
       - ./alert.rules.yml:/etc/prometheus/alert.rules.yml
-      # 💡 변수에 따라 실제 경로(/var/lib) 또는 로컬 경로(./data) 선택
       - {{ storage_setup_enabled | ternary('/var/lib/prometheus', './data/prometheus') }}:/prometheus
     ports:
       - "9090:9090"
@@ -18,12 +16,14 @@ services:
       - "--storage.tsdb.path=/prometheus"
       - "--storage.tsdb.retention.time=15d"
       - "--web.enable-lifecycle"
+    networks:
+      - monitoring-network
     restart: always
 
+  # 2. Grafana: 데이터 시각화 대시보드
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
-    # [수정] depends_on 추가 - Grafana가 Prometheus보다 먼저 뜨면 datasource 연결 실패
     depends_on:
       - prometheus
       - alertmanager
@@ -32,8 +32,11 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning
     ports:
       - "3000:3000"
+    networks:
+      - monitoring-network
     restart: always
 
+  # 3. Alertmanager: 알람 라우팅 및 관리
   alertmanager:
     image: prom/alertmanager:latest
     container_name: alertmanager
@@ -41,10 +44,11 @@ services:
       - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml
     ports:
       - "9093:9093"
+    networks:
+      - monitoring-network
     restart: always
 
-  # [추가] GCP Cloud SQL 메트릭을 GCP Monitoring API에서 수집해 Prometheus로 노출
-  # 호스트 포트 미노출 - prometheus와 같은 docker network 내에서 서비스명으로 직접 통신
+  # 4. Stackdriver Exporter: GCP Cloud SQL 메트릭 수집
   stackdriver-exporter:
     image: prometheuscommunity/stackdriver-exporter:latest
     container_name: stackdriver-exporter
@@ -55,6 +59,35 @@ services:
       - "--monitoring.metrics-type-prefixes=cloudsql.googleapis.com"
     volumes:
       - /home/ubuntu/gcp-sa-key.json:/etc/gcp/gcp-sa-key.json:ro
+    networks:
+      - monitoring-network
     restart: always
 
- 
+  # 5. Discord Bot: AI 진단 및 알람 전송 봇
+  discord-bot:
+    image: jeongseungmin/chilseongpa-bot_dockerhub:latest
+    container_name: chilseongpa-bot
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./configs/kubeconfig-gcp-main.yaml:/root/.kube/config-gcp
+      - ./configs/kubeconfig-aws-sub.yaml:/root/.kube/config-aws
+      - ./configs:/root/.kube/
+    environment:
+      - DISCORD_BOT_TOKEN={{ discord_bot_token }}
+      - DISCORD_CHANNEL_ID={{ discord_channel_id }}
+      - GEMINI_API_KEY={{ gemini_api_key }}
+      - GRAFANA_URL=https://{{ grafana_domain }}
+      - KUBECONFIG_GCP=/root/.kube/config-gcp
+      - KUBECONFIG_AWS=/root/.kube/config-aws
+    ports:
+      - "5000:5000"
+    networks:
+      - monitoring-network
+    depends_on:
+      - alertmanager
+    restart: always
+
+# 네트워크 설정: 모든 서비스가 브리지 네트워크를 통해 내부 통신
+networks:
+  monitoring-network:
+    driver: bridge

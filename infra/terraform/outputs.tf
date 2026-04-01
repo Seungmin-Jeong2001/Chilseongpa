@@ -73,18 +73,19 @@ output "ssh_commands" {
   description = "Convenient SSH commands"
   value = <<EOT
 ================ SSH ACCESS ================
-#ssh 키가 Chilseongpa 디렉토리 바로 아래에 있는 경우에 한하여 아래 코드가 실행가능
-# 1. SSH 에이전트 실행 (이미 실행 중이라도 다시 실행해도 무방합니다)
-#eval $(ssh-agent -s)
 
-# 2. AWS 열쇠 등록 (상대 경로 주의)
-#ssh-add ../../chilseongpa_keypair.pem
 
-# 3. GCP 열쇠 등록
-#ssh-add ../../my_gcp_key
+# SSH Agent 시작 및 키 추가 (로컬에서 실행)
+eval $(ssh-agent -s) \
+ssh-add ../../chilseongpa_keypair.pem \
+ssh-add ../../my_gcp_key \
+ssh-add -l
 
-# 4. 등록된 열쇠 목록 확인 (지갑에 열쇠가 잘 들어있는지 확인)
-#ssh-add -l
+# 변수 주입
+set -a \
+source ./group_vars/.env \
+set +a \
+echo $DISCORD_BOT_TOKEN
 
 # Bastion Host
 ssh -i ../../chilseongpa_keypair.pem ubuntu@${module.aws.bastion_public_ip}

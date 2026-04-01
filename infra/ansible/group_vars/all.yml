@@ -11,12 +11,13 @@ grafana_datasource_src: "datasource.yml.j2"
 grafana_dashboard_provider_src: "dashboard.yml.j2"
 config_render_mode: "template"
 
+
 # 4. 알림 설정
 alert_webhook_url: "http://alert-bot:5000/webhook"
 
 # 디스코드 개발자 포털에서 가져온 값들
 discord_bot_token: "{{ lookup('env', 'DISCORD_BOT_TOKEN') }}"
-discord_channel_id: "123456789012345678" # 알림을 받을 채널 ID
+discord_channel_id: "{{ lookup('env', 'DISCORD_CHANNEL_ID') }}"
 
 # 구글 AI 스튜디오에서 가져온 값
 gemini_api_key: "{{ lookup('env', 'GEMINI_API_KEY') }}"

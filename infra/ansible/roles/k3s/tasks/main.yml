@@ -1,7 +1,7 @@
 - name: K3s 설치 여부 확인
   command: which k3s
   register: k3s_installed
-  ignore_errors: true
+  failed_when: false      # ignore_errors 대신 사용하여 불필요한 빨간색 에러 로그 방지
   changed_when: false
 
 - name: K3s 설치
@@ -14,13 +14,10 @@
     name: k3s
     state: started
     enabled: yes
-
-# [추가] kube-state-metrics 설치
-# node-exporter만으로는 Pod/Container 상태 수집 불가
-# GCP(Primary)/AWS(Fallback) 모두 Pod/Container 상태 모니터링 필요
+# 1. [main] kube-state-metrics 설치 (모니터링 기반 마련)
 - name: Install kube-state-metrics
   ansible.builtin.shell: |
-    kubectl apply -k https://github.com/kubernetes/kube-state-metrics/examples/standard
+    kubectl apply -k [https://github.com/kubernetes/kube-state-metrics/examples/standard](https://github.com/kubernetes/kube-state-metrics/examples/standard)
     kubectl delete svc kube-state-metrics -n kube-system --ignore-not-found
     kubectl apply -f - <<EOF
     apiVersion: v1
@@ -40,17 +37,53 @@
   environment:
     KUBECONFIG: /etc/rancher/k3s/k3s.yaml
   changed_when: false
-- name: kubeconfig 권한 설정
-  file:
+  when: inventory_hostname in ['gcp-main', 'aws-sub']
+
+# 2. [main] kubeconfig 권한 설정 (이 작업이 선행되어야 아래 fetch가 가능합니다)
+- name: Set kubeconfig permissions
+  ansible.builtin.file:
     path: /etc/rancher/k3s/k3s.yaml
     mode: '0644'
+  become: yes
+  when: inventory_hostname in ['gcp-main', 'aws-sub']
 
-- name: KUBECONFIG 환경변수 등록
-  lineinfile:
+# 3. [main] 환경변수 등록 및 노드 상태 대기
+- name: Register KUBECONFIG env var
+  ansible.builtin.lineinfile:
     path: /etc/environment
     line: 'KUBECONFIG=/etc/rancher/k3s/k3s.yaml'
 
-- name: node Ready 대기
-  command: k3s kubectl wait --for=condition=Ready node --all --timeout=60s
+- name: Wait for nodes to be Ready
+  ansible.builtin.command: k3s kubectl wait --for=condition=Ready node --all --timeout=60s
   retries: 5
   delay: 10
+  changed_when: false
+
+# 4. [feature] 로컬(내 PC)에 configs 폴더 생성
+- name: Ensure local configs directory exists
+  delegate_to: localhost
+  ansible.builtin.file:
+    path: "{{ playbook_dir }}/configs"
+    state: directory
+    mode: '0755'
+  run_once: true
+  become: false
+
+# 5. [feature] 원격 마스터에서 kubeconfig 가져오기
+- name: Fetch kubeconfig from K3s masters
+  ansible.builtin.fetch:
+    src: /etc/rancher/k3s/k3s.yaml
+    dest: "{{ playbook_dir }}/configs/kubeconfig-{{ inventory_hostname }}.yaml"
+    flat: yes
+  become: yes 
+  when: inventory_hostname in ['gcp-main', 'aws-sub']
+
+# 6. [feature] 로컬에 저장된 kubeconfig의 서버 주소 수정 (127.0.0.1 -> 공인/호스트 IP)
+- name: Update server address in local kubeconfig
+  delegate_to: localhost
+  ansible.builtin.replace:
+    path: "{{ playbook_dir }}/configs/kubeconfig-{{ inventory_hostname }}.yaml"
+    regexp: '[https://127.0.0.1:6443](https://127.0.0.1:6443)'
+    replace: "https://{{ ansible_host }}:6443"
+  become: false
+  when: inventory_hostname in ['gcp-main', 'aws-sub']
