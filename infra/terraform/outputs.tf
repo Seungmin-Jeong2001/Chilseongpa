@@ -57,16 +57,11 @@ output "aws_standby_security_group_id" {
 }
 
 # -----------------------------------------------
-# AWS Monitoring Server outputs
+# GCP Monitoring Server outputs
 # -----------------------------------------------
-output "aws_monitoring_private_ip" {
-  description = "AWS Monitoring Server Private IP"
-  value       = module.aws.monitoring_private_ip
-}
-
-output "aws_monitoring_instance_id" {
-  description = "AWS Monitoring Server EC2 Instance ID"
-  value       = module.aws.monitoring_instance_id
+output "gcp_monitoring_ephemeral_ip" {
+  description = "GCP Monitoring Server Public IP (Ansible 접속용)"
+  value       = module.gcp.monitoring_ephemeral_ip
 }
 
 output "ssh_commands" {
@@ -90,14 +85,14 @@ echo $DISCORD_BOT_TOKEN
 # Bastion Host
 ssh -i ../../chilseongpa_keypair.pem ubuntu@${module.aws.bastion_public_ip}
 
-# Monitoring (via Bastion)
-ssh -i ../../chilseongpa_keypair.pem -A -J ubuntu@${module.aws.bastion_public_ip} ubuntu@${module.aws.monitoring_private_ip}
-
 # k3s Node (via Bastion)
 ssh -i ../../chilseongpa_keypair.pem -A -J ubuntu@${module.aws.bastion_public_ip} ubuntu@${module.aws.k3s_private_ip}
 
-# GCP k3s (GCP는 전용 키 사용 권장)
+# GCP k3s
 ssh -i ~/my_gcp_key ubuntu@${module.gcp.k3s_ephemeral_ip}
+
+# GCP Monitoring
+ssh -i ~/my_gcp_key ubuntu@${module.gcp.monitoring_ephemeral_ip}
 
 ===========================================
 EOT

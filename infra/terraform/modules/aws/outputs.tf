@@ -52,20 +52,3 @@ output "standby_security_group_id" {
   value       = aws_security_group.k3s.id
 }
 
-# -----------------------------------------------
-# Monitoring Server outputs
-# -----------------------------------------------
-output "monitoring_private_ip" {
-  description = "Monitoring Server Private IP"
-  value       = aws_instance.monitoring.private_ip
-}
-
-output "monitoring_instance_id" {
-  description = "Monitoring Server EC2 Instance ID"
-  value       = aws_instance.monitoring.id
-}
-
-output "monitoring_sg_id" {
-  description = "Monitoring Server Security Group ID"
-  value       = aws_security_group.monitoring.id
-}

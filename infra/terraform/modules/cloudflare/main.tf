@@ -94,6 +94,66 @@ resource "cloudflare_zero_trust_access_policy" "gcp_ksm_policy" {
   }
 }
 
+# [추가] AWS Node Exporter(9100) 수집을 위한 Zero Trust 보호
+resource "cloudflare_zero_trust_access_application" "aws_node" {
+  zone_id = var.cf_zone_id
+  name    = "AWS Node Exporter"
+  domain  = "aws-node.bucheongoyangijanggun.com"
+  type    = "self_hosted"
+}
+
+resource "cloudflare_zero_trust_access_policy" "aws_node_policy" {
+  application_id = cloudflare_zero_trust_access_application.aws_node.id
+  zone_id        = var.cf_zone_id
+  name           = "Allow Prometheus Scraper"
+  decision       = "non_identity"
+  precedence     = 1
+
+  include {
+    service_token = [cloudflare_zero_trust_access_service_token.monitoring_token.id]
+  }
+}
+
+# [추가] AWS 앱 메트릭(30800) 수집을 위한 Zero Trust 보호
+resource "cloudflare_zero_trust_access_application" "aws_app" {
+  zone_id = var.cf_zone_id
+  name    = "AWS App Metrics"
+  domain  = "aws-app.bucheongoyangijanggun.com"
+  type    = "self_hosted"
+}
+
+resource "cloudflare_zero_trust_access_policy" "aws_app_policy" {
+  application_id = cloudflare_zero_trust_access_application.aws_app.id
+  zone_id        = var.cf_zone_id
+  name           = "Allow Prometheus Scraper"
+  decision       = "non_identity"
+  precedence     = 1
+
+  include {
+    service_token = [cloudflare_zero_trust_access_service_token.monitoring_token.id]
+  }
+}
+
+# [추가] AWS kube-state-metrics(30080) 수집을 위한 Zero Trust 보호
+resource "cloudflare_zero_trust_access_application" "aws_ksm" {
+  zone_id = var.cf_zone_id
+  name    = "AWS kube-state-metrics"
+  domain  = "aws-ksm.bucheongoyangijanggun.com"
+  type    = "self_hosted"
+}
+
+resource "cloudflare_zero_trust_access_policy" "aws_ksm_policy" {
+  application_id = cloudflare_zero_trust_access_application.aws_ksm.id
+  zone_id        = var.cf_zone_id
+  name           = "Allow Prometheus Scraper"
+  decision       = "non_identity"
+  precedence     = 1
+
+  include {
+    service_token = [cloudflare_zero_trust_access_service_token.monitoring_token.id]
+  }
+}
+
 # -------------------------------------------------------------------
 # 2. Tunnel Config 설정 (멀티 서비스 매핑)
 # -------------------------------------------------------------------
@@ -125,24 +185,47 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "configs" {
       for_each = each.key == "gcp" ? [1] : []
       content {
         hostname = "gcp-metrics.bucheongoyangijanggun.com"
-        service  = "http://localhost:9100" # node exporter - CPU/Memory
+        service  = "http://localhost:9100"
       }
     }
 
-    # [추가] GCP 앱 메트릭 수집 - HTTP 요청수/응답시간
     dynamic "ingress_rule" {
       for_each = each.key == "gcp" ? [1] : []
       content {
         hostname = "gcp-app.bucheongoyangijanggun.com"
-        service  = "http://localhost:8000"
+        service  = "http://localhost:30800"
       }
     }
 
-    # [추가] GCP kube-state-metrics 수집 - GCP(Primary)/AWS(Fallback) Pod/Container 상태 모니터링
     dynamic "ingress_rule" {
       for_each = each.key == "gcp" ? [1] : []
       content {
         hostname = "gcp-ksm.bucheongoyangijanggun.com"
+        service  = "http://localhost:30080"
+      }
+    }
+
+    # [E] AWS 터널 전용 규칙 (Node Exporter / App Metrics / kube-state-metrics)
+    dynamic "ingress_rule" {
+      for_each = each.key == "aws" ? [1] : []
+      content {
+        hostname = "aws-node.bucheongoyangijanggun.com"
+        service  = "http://localhost:9100"
+      }
+    }
+
+    dynamic "ingress_rule" {
+      for_each = each.key == "aws" ? [1] : []
+      content {
+        hostname = "aws-app.bucheongoyangijanggun.com"
+        service  = "http://localhost:30800"
+      }
+    }
+
+    dynamic "ingress_rule" {
+      for_each = each.key == "aws" ? [1] : []
+      content {
+        hostname = "aws-ksm.bucheongoyangijanggun.com"
         service  = "http://localhost:30080"
       }
     }
@@ -204,6 +287,33 @@ resource "cloudflare_record" "gcp_ksm_record" {
   zone_id = var.cf_zone_id
   name    = "gcp-ksm"
   content = "${cloudflare_zero_trust_tunnel_cloudflared.tunnels["gcp"].id}.cfargotunnel.com"
+  type    = "CNAME"
+  proxied = true
+}
+
+# [추가] AWS Node Exporter 도메인
+resource "cloudflare_record" "aws_node_record" {
+  zone_id = var.cf_zone_id
+  name    = "aws-node"
+  content = "${cloudflare_zero_trust_tunnel_cloudflared.tunnels["aws"].id}.cfargotunnel.com"
+  type    = "CNAME"
+  proxied = true
+}
+
+# [추가] AWS App 메트릭 도메인
+resource "cloudflare_record" "aws_app_record" {
+  zone_id = var.cf_zone_id
+  name    = "aws-app"
+  content = "${cloudflare_zero_trust_tunnel_cloudflared.tunnels["aws"].id}.cfargotunnel.com"
+  type    = "CNAME"
+  proxied = true
+}
+
+# [추가] AWS kube-state-metrics 도메인
+resource "cloudflare_record" "aws_ksm_record" {
+  zone_id = var.cf_zone_id
+  name    = "aws-ksm"
+  content = "${cloudflare_zero_trust_tunnel_cloudflared.tunnels["aws"].id}.cfargotunnel.com"
   type    = "CNAME"
   proxied = true
 }

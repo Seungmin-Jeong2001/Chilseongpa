@@ -32,6 +32,13 @@ variable "gcp_zone" {
   type        = string
   default     = "asia-northeast3-a"
 }
+
+variable "gcp_subnet_cidr" {
+  description = "GCP 서브넷 CIDR (AWS 10.20.0.0/16과 충돌 없는 대역)"
+  type        = string
+  default     = "10.30.0.0/24"
+}
+
 variable "gcp_credentials" {
   description = "GCP 인증 JSON (GitHub Actions에서 주입)"
   type        = string
@@ -53,6 +60,12 @@ variable "gcp_ssh_public_key" {
 # --- Cloudflare 연결 변수 ---
 variable "tunnel_token" {
   description = "Cloudflare Tunnel Token for GCP Instance"
+  type        = string
+  sensitive   = true
+}
+
+variable "monitoring_tunnel_token" {
+  description = "Cloudflare Tunnel Token for GCP Monitoring Instance"
   type        = string
   sensitive   = true
 }
