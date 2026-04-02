@@ -118,7 +118,7 @@ Application DR 중심 구조
 
 ### Monitoring Infrastructure
 
-- AWS Monitoring Server
+- GCP Monitoring Server
 - Prometheus / Grafana / Alertmanager
 - Kubernetes 관리 UI
 
@@ -234,7 +234,7 @@ Application Pod /metrics
        │
        ▼
 Prometheus
-(AWS Monitoring Server)
+(GCP Monitoring Server)
        │
        ├── Grafana Dashboard
        └── Alertmanager
