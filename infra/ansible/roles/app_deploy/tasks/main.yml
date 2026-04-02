@@ -8,7 +8,7 @@
     kind: Namespace
     state: present
 
-
+# 2. cloud sql DB에 필요한 정보를 k8s db로 secret 생성
 - name: Create Cloud SQL DB credentials secret
   kubernetes.core.k8s:
     state: present
@@ -24,6 +24,7 @@
         DB_PASSWORD: "{{ vault_db_password }}"
         DB_NAME: "{{ db_name }}"
 
+# 3. cloud sql SA key를 k8s secret으로 생성
 - name: Create Cloud SQL SA key secret
   kubernetes.core.k8s:
     state: present
@@ -37,15 +38,14 @@
       data:
         sa-key.json: "{{ vault_sa_key_b64 }}"
 
-
-# 2. Helm Chart 템플릿 폴더를 타겟 노드의 임시 경로로 복사
+# 4. Helm Chart 템플릿 폴더를 타겟 노드의 임시 경로로 복사
 - name: Copy app-chart to target node
   ansible.builtin.copy:
     src: app-chart/
     dest: /tmp/app-chart/
     mode: '0755'
 
-# 3. Helm 모듈로 앱 배포 (알아서 설치/업데이트 판단)
+# 5. Helm 모듈로 앱 배포 (알아서 설치/업데이트 판단)
 - name: Deploy application via Helm module
   kubernetes.core.helm:
     name: my-app
@@ -59,8 +59,14 @@
     force: true
     replace: false
 
-# 4. Ingress 매니페스트 적용
+# 6. Ingress 매니페스트 적용
 - name: Apply Ingress manifest
   kubernetes.core.k8s:
     src: "/tmp/app-chart/ingress.yaml"
+    state: present
+
+# 7. HPA 매니페스트 적용
+- name: Apply HPA manifest
+  kubernetes.core.k8s:
+    src: "/tmp/app-chart/backend-hpa.yaml"
     state: present

@@ -16,6 +16,13 @@ spec:
         - name: backend
           image: '{{ .Values.backend.image }}:{{ .Values.backend.tag }}'
           imagePullPolicy: {{ .Values.backend.pullPolicy }}
+          resources: 
+            requests:
+              cpu: {{ .Values.backend.resources.requests.cpu }}
+              memory: {{ .Values.backend.resources.requests.memory }}
+            limits:
+              cpu: {{ .Values.backend.resources.limits.cpu }}
+              memory: {{ .Values.backend.resources.limits.memory }}
           ports:
             - containerPort: {{ .Values.backend.port }}
           env:

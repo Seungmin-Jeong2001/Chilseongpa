@@ -3,6 +3,13 @@ backend:
   tag: "backend-prod-v1.0.15"
   pullPolicy: IfNotPresent
   port: 8000
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
 
 frontend:
   image: "docker.io/jeongseungmin/chilseongpa_dockerhub"
