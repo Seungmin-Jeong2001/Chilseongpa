@@ -7,7 +7,7 @@ metadata:
     traefik.ingress.kubernetes.io/router.entrypoints: web
 spec:
   rules:
-    - host: api.hybrid-test.local # 나중에 진짜 도메인으로 변경해야함
+    - host: app.bucheongoyangijanggun.com # 나중에 진짜 도메인으로 변경해야함
       http:
         paths:
         - path: /api
