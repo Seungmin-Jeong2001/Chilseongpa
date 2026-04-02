@@ -90,7 +90,7 @@ ssh -i ../../chilseongpa_keypair.pem -A -J ubuntu@${module.aws.bastion_public_ip
 
 # GCP k3s
 ssh -i ../../my_gcp_key ubuntu@${module.gcp.k3s_ephemeral_ip}
-
+ 
 # GCP Monitoring
 ssh -i ../../my_gcp_key ubuntu@${module.gcp.monitoring_ephemeral_ip}
 
