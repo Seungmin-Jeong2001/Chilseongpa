@@ -1,30 +1,74 @@
-# Terraform — GCP Primary
+# Terraform — GCP Module
 
-GCP Primary 환경의 네트워크, 보안, 컴퓨팅 리소스를 코드로 프로비저닝합니다.
+GCP Primary 환경의 네트워크, 컴퓨팅, 데이터베이스 리소스를 코드로 프로비저닝합니다.
 
-## 🛠️ 사전 준비 (Prerequisites)
-Terraform 실행 전, GCP 프로젝트에 필요한 API들을 활성화해야 합니다. (Terraform 실행 시 API 활성화 지연으로 인한 Dependency 에러를 원천 차단하기 위함입니다.)
-아래 명령어를 터미널에서 1회 실행해 주세요.
+---
+
+## 사전 준비
+
+Terraform 실행 전, GCP 프로젝트에 필요한 API를 활성화하세요.
 
 ```bash
 gcloud services enable compute.googleapis.com \
                        secretmanager.googleapis.com \
-                       sqladmin.googleapis.com
+                       sqladmin.googleapis.com \
+                       monitoring.googleapis.com
 ```
 
-📂 파일 역할파일명역할
+---
 
-main.tf	          Terraform 설정 및 GCP Provider 구성
--> 전혀 ㅎ해당 기능 안해서 지웠느데 문제 없겠죠?
+## 파일 역할
 
-network.tf	      VPC 및 Subnet 구성
+| 파일           | 역할                                                                              |
+| -------------- | --------------------------------------------------------------------------------- |
+| `network.tf`   | 커스텀 VPC / 서브넷 생성, 방화벽 규칙 (SSH, 내부 메트릭 포트)                    |
+| `compute.tf`   | K3s Primary VM (e2-standard-2), Monitoring VM (e2-small) 생성                    |
+| `database.tf`  | Cloud SQL MySQL 8.0 생성                                                          |
+| `security.tf`  | Cloud SQL Auth Proxy용 서비스 계정 및 키 발급                                     |
+| `variables.tf` | 프로젝트 ID, 리전, SSH 공개키, DB 비밀번호 등 변수 정의                           |
+| `outputs.tf`   | K3s 공인 IP, K3s 내부 IP, Monitoring 공인 IP, DB 연결 정보 출력                  |
 
-compute.tf	      K3s를 구동할 Compute Engine (VM) 생성
+---
 
-database.tf	      백엔드 데이터베이스 리소스 생성
+## 네트워크 구성
 
-security.tf	      Zero Trust 방화벽 규칙 (22번 포트만 개방)
+### VPC / 서브넷
 
-variables.tf	    프로젝트 ID, DB 비밀번호 등 변수 정의
+| 리소스  | 이름                             | CIDR           |
+| ------- | -------------------------------- | -------------- |
+| VPC     | `{project}-{env}-vpc`            | —              |
+| 서브넷  | `{project}-{env}-subnet`         | `10.30.0.0/24` |
 
-outputs.tf	      배포 완료 후 접근용 IP 등 결과값 출력
+### 방화벽 규칙
+
+| 규칙                        | 허용 포트                 | 대상 태그      | 소스              |
+| --------------------------- | ------------------------- | -------------- | ----------------- |
+| `allow-ssh`                 | 22                        | k3s-node, monitoring-node | 0.0.0.0/0 |
+| `allow-internal-metrics`    | 9100 / 30800 / 30080      | k3s-node       | monitoring-node   |
+
+> `allow-internal-metrics`는 GCP 내부 태그 기반 룰입니다.  
+> Monitoring VM(`monitoring-node`)에서 K3s VM(`k3s-node`)의 메트릭 포트만 허용합니다.
+
+---
+
+## 컴퓨팅 리소스
+
+| VM                  | 타입           | 용도                                                  |
+| ------------------- | -------------- | ----------------------------------------------------- |
+| K3s Primary Node    | e2-standard-2  | Kubernetes (K3s) Primary 클러스터                     |
+| Monitoring Server   | e2-small       | Prometheus / Grafana / Alertmanager / Discord Bot     |
+
+- 두 VM 모두 Ubuntu 22.04, 50GB SSD, 동일 VPC/서브넷에 배치
+- Monitoring VM은 startup script로 cloudflared (monitoring 터널) 자동 설치
+
+---
+
+## 주요 Output
+
+| output                        | 설명                                      |
+| ----------------------------- | ----------------------------------------- |
+| `k3s_ephemeral_ip`            | K3s VM 공인 IP (Ansible 접속용)           |
+| `k3s_internal_ip`             | K3s VM 내부 IP (Prometheus scrape용)      |
+| `monitoring_ephemeral_ip`     | Monitoring VM 공인 IP (Ansible 접속용)    |
+| `db_proxy_sa_key`             | Cloud SQL Auth Proxy 서비스 계정 JSON 키  |
+| `db_instance_connection_name` | Cloud SQL 연결 문자열                     |

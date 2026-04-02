@@ -67,29 +67,9 @@ variable "root_volume_size" {
 }
 
 # -----------------------------------------------
-# Monitoring Server 변수
-# -----------------------------------------------
-variable "monitoring_instance_type" {
-  description = "Monitoring Server EC2 instance type"
-  type        = string
-  default     = "t3.small"
-}
-
-variable "monitoring_volume_size" {
-  description = "Monitoring Server EBS volume size (GB)"
-  type        = number
-  default     = 30
-}
-
-# -----------------------------------------------
 # Cloudflare 터널 토큰
 # -----------------------------------------------
 variable "aws_tunnel_token" {
   description = "AWS K3s용 터널 토큰"
-  type        = string
-}
-
-variable "monitoring_tunnel_token" {
-  description = "Monitoring 서버용 터널 토큰"
   type        = string
 }

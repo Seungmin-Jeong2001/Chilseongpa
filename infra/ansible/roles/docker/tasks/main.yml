@@ -68,7 +68,8 @@
         "log-opts": {
           "max-size": "10m",
           "max-file": "3"
-        }
+        },
+        "mtu": 1460
       }
   notify: Restart Docker          # 설정 변경 시 Docker 재시작
 

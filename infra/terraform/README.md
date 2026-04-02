@@ -15,11 +15,10 @@ terraform/
 ├── terraform.tfvars.example    # 변수 입력 예시 — 복사 후 terraform.tfvars로 사용
 ├── ansible_inventory.tf        # inventory.ini 자동 생성 (local_file 리소스)
 ├── inventory.tpl               # inventory.ini 템플릿 (Bastion ProxyCommand 포함)
-├── ssh_config_setup.sh         # terraform apply 후 ~/.ssh/config 자동 생성 스크립트
 └── modules/
     ├── cloudflare/             # Tunnel, Load Balancer, Access 정책
-    ├── aws/                    # VPC, Subnet, Bastion, K3s 노드, Monitoring 서버
-    └── gcp/                    # VM, Cloud SQL, 서비스 계정 및 키
+    ├── aws/                    # VPC, Subnet, Bastion, K3s 노드
+    └── gcp/                    # 커스텀 VPC, VM (K3s, Monitoring), Cloud SQL, 서비스 계정
 ```
 
 ---
@@ -31,50 +30,55 @@ terraform/
 Cloudflare Zero Trust 기반 인프라를 구성합니다.  
 **다른 모듈보다 먼저 실행**되어 터널 토큰을 AWS / GCP 모듈에 전달합니다.
 
-| 리소스        | 설명                                                    |
-| ------------- | ------------------------------------------------------- |
-| Tunnel × 3    | gcp / aws / monitoring 각 서버용 터널 생성              |
-| Load Balancer | GCP(Primary) → AWS(Standby) Failover 구성               |
-| Access Policy | Prometheus → GCP/AWS Node Exporter scrape용 서비스 토큰 |
+| 리소스        | 설명                                                         |
+| ------------- | ------------------------------------------------------------ |
+| Tunnel × 3    | gcp / aws / monitoring 각 서버용 터널 생성                   |
+| Load Balancer | GCP(Primary) → AWS(Standby) Failover 구성                    |
+| Access Policy | Prometheus → AWS Node Exporter/App/kube-state-metrics scrape용 서비스 토큰 |
+
+> GCP 메트릭은 GCP 내부 직접 통신으로 수집하므로 Cloudflare Access가 불필요합니다.  
+> AWS 메트릭만 Cloudflare Zero Trust 터널을 경유합니다.
 
 ### `modules/aws`
 
-AWS 위에 Standby K3s 클러스터와 모니터링 서버를 구성합니다.
+AWS 위에 Standby K3s 클러스터를 구성합니다.
 
-| 파일                 | 생성 리소스                                                                                      |
-| -------------------- | ------------------------------------------------------------------------------------------------ |
-| `network.tf`         | VPC (`10.20.0.0/16`), Public Subnet, Private Subnet, IGW, NAT Gateway, Route Table               |
-| `ec2.tf`             | Bastion (t3.micro / Public), K3s 노드 (t3.small / Private), Monitoring 서버 (t3.small / Private) |
-| `security_groups.tf` | Bastion SG, K3s SG, Monitoring SG                                                                |
+| 파일                 | 생성 리소스                                                                       |
+| -------------------- | --------------------------------------------------------------------------------- |
+| `network.tf`         | VPC (`10.20.0.0/16`), Public Subnet, Private Subnet, IGW, NAT Gateway, Route Table |
+| `ec2.tf`             | Bastion (t3.micro / Public), K3s 노드 (t3.small / Private)                        |
+| `security_groups.tf` | Bastion SG, K3s SG                                                                |
 
 **서브넷 구성**
 
-| 서브넷  | CIDR           | 배치 서버                           |
-| ------- | -------------- | ----------------------------------- |
-| Public  | `10.20.1.0/24` | Bastion, NAT Gateway                |
-| Private | `10.20.2.0/24` | K3s Standby Node, Monitoring Server |
+| 서브넷  | CIDR           | 배치 서버            |
+| ------- | -------------- | -------------------- |
+| Public  | `10.20.1.0/24` | Bastion, NAT Gateway |
+| Private | `10.20.2.0/24` | K3s Standby Node     |
 
 **Security Group 정책**
 
-| 서버       | 인바운드 허용                                |
-| ---------- | -------------------------------------------- |
-| Bastion    | SSH (운영자 IP)                              |
-| K3s 노드   | SSH (Bastion SG), 6443 / 9100 (VPC 내부)     |
-| Monitoring | SSH / 3000 / 9090 / 9093 (Bastion SG 경유만) |
+| 서버     | 인바운드 허용                            |
+| -------- | ---------------------------------------- |
+| Bastion  | SSH (운영자 IP)                          |
+| K3s 노드 | SSH (Bastion SG), 6443 / 9100 (VPC 내부) |
 
-> K3s / Monitoring은 Private Subnet에 배치되어 외부 직접 접근이 불가능합니다.  
+> K3s는 Private Subnet에 배치되어 외부 직접 접근이 불가능합니다.  
 > 모든 아웃바운드는 NAT Gateway를 경유합니다. (cloudflared Tunnel 연결 포함)
 
 ### `modules/gcp`
 
-GCP 위에 Primary K3s 클러스터와 Cloud SQL을 구성합니다.
+GCP 위에 Primary K3s 클러스터, Monitoring 서버, Cloud SQL을 구성합니다.
 
-| 파일          | 생성 리소스                                                   |
-| ------------- | ------------------------------------------------------------- |
-| `compute.tf`  | K3s VM (e2-standard-2, Ubuntu 22.04, 50GB)                    |
-| `network.tf`  | 방화벽 — SSH(22), Node Exporter(9100) 허용                    |
-| `database.tf` | Cloud SQL MySQL 8.0 (`db-custom-2-7680`), DB: `hybrid_app_db` |
-| `security.tf` | Cloud SQL Auth Proxy용 서비스 계정 및 키                      |
+| 파일          | 생성 리소스                                                                                   |
+| ------------- | --------------------------------------------------------------------------------------------- |
+| `network.tf`  | 커스텀 VPC / 서브넷, 방화벽 — SSH(22), 내부 메트릭 포트(9100 / 30800 / 30080)               |
+| `compute.tf`  | K3s VM (e2-standard-2, Ubuntu 22.04, 50GB), Monitoring VM (e2-small, Ubuntu 22.04, 50GB)     |
+| `database.tf` | Cloud SQL MySQL 8.0 (`db-custom-2-7680`), DB: `hybrid_app_db`                                |
+| `security.tf` | Cloud SQL Auth Proxy용 서비스 계정 및 키                                                      |
+
+> Monitoring VM은 GCP 내부 네트워크로 K3s 노드(9100 / 30800 / 30080)에 직접 접근합니다.  
+> 방화벽은 `monitoring-node` → `k3s-node` 태그 기반으로 허용합니다.
 
 ---
 
@@ -145,31 +149,32 @@ terraform plan
 terraform apply
 
 # 4. SSH config 자동 생성 (선택)
-bash ssh_config_setup.sh
+bash ../setup-ssh.sh
 ```
 
 `terraform apply` 완료 후:
 
 - `infra/ansible/inventory.ini` 자동 생성
-- `ssh_config_setup.sh` 실행 시 `~/.ssh/config`에 접속 설정 자동 등록
+- `setup-ssh.sh` 실행 시 `~/.ssh/config`에 접속 설정 자동 등록
 
-### ssh_config_setup.sh 실행 후 접속 방법
+### setup-ssh.sh 실행 후 접속 방법
 
 ```bash
-ssh bastion      # Bastion Host 접속
-ssh k3s          # K3s Standby Node 접속 (Bastion 자동 경유)
-ssh monitoring   # Monitoring Server 접속 (Bastion 자동 경유)
+ssh gcp-k3s        # GCP K3s Primary 노드
+ssh gcp-monitoring # GCP Monitoring 서버
+ssh aws-bastion    # AWS Bastion Host
+ssh aws-k3s        # AWS K3s Standby 노드 (Bastion 자동 경유)
 ```
 
 ### 주요 output 값
 
-| output                      | 설명                                                   |
-| --------------------------- | ------------------------------------------------------ |
-| `aws_bastion_public_ip`     | AWS Bastion 공인 IP                                    |
-| `aws_k3s_private_ip`        | AWS K3s 노드 Private IP                                |
-| `aws_monitoring_private_ip` | AWS Monitoring 서버 Private IP                         |
-| `cf_access_client_id`       | Cloudflare Access Client ID (Prometheus scrape 인증용) |
-| `gcp_k3s_ephemeral_ip`      | GCP K3s VM 공인 IP                                     |
+| output                       | 설명                                                   |
+| ---------------------------- | ------------------------------------------------------ |
+| `aws_bastion_public_ip`      | AWS Bastion 공인 IP                                    |
+| `aws_k3s_private_ip`         | AWS K3s 노드 Private IP                                |
+| `gcp_k3s_ephemeral_ip`       | GCP K3s VM 공인 IP                                     |
+| `gcp_monitoring_ephemeral_ip`| GCP Monitoring 서버 공인 IP                            |
+| `cf_access_client_id`        | Cloudflare Access Client ID (Prometheus scrape 인증용) |
 
 ### 리소스 삭제
 
@@ -182,5 +187,7 @@ terraform destroy
 ## 주의사항
 
 - `allowed_ssh_cidr` 기본값이 `0.0.0.0/0`입니다. 운영 환경에서는 반드시 본인 IP(`x.x.x.x/32`)로 변경하세요.
-- K3s / Monitoring 서버는 Private Subnet에 있어 직접 SSH 접속이 불가능합니다. 반드시 Bastion을 경유하세요.
+- AWS K3s 서버는 Private Subnet에 있어 직접 SSH 접속이 불가능합니다. 반드시 Bastion을 경유하세요.
+- GCP K3s / Monitoring 서버는 공인 IP가 있으며 `my_gcp_key`로 직접 접속합니다.
 - `terraform.tfvars`는 시크릿이 포함되므로 절대 Git에 커밋하지 마세요.
+- `inventory.ini`는 Terraform이 자동 생성하며 민감 정보가 포함되어 있어 Git에서 제외됩니다.

@@ -3,7 +3,7 @@ global:
   scrape_timeout: 10s
   evaluation_interval: 15s
   external_labels:
-    monitor: 'aws-prometheus'
+    monitor: 'gcp-prometheus'
     environment: 'prod'
 
 rule_files:
@@ -25,67 +25,24 @@ scrape_configs:
   # GCP Monitoring API → stackdriver-exporter → Prometheus
   - job_name: 'gcp-cloudsql'
     static_configs:
-      # [수정] cloud-sql-proxy --prometheus(9091) → stackdriver-exporter(9255)로 변경
       - targets: ['stackdriver-exporter:9255']
         labels:
           cluster: 'gcp'
           service: 'cloudsql'
           environment: 'prod'
-    metric_relabel_configs:
-      - source_labels: [__name__]
-        regex: 'stackdriver_cloudsql_googleapis_com_database_cpu_utilization'
-        target_label: __name__
-        replacement: 'cloudsql_cpu_utilization'
 
-      - source_labels: [__name__]
-        regex: 'stackdriver_cloudsql_googleapis_com_database_memory_usage'
-        target_label: __name__
-        replacement: 'cloudsql_memory_used_bytes'
-
-      - source_labels: [__name__]
-        regex: 'stackdriver_cloudsql_googleapis_com_database_network_connections'
-        target_label: __name__
-        replacement: 'cloudsql_network_connections_total'
-
-      - source_labels: [__name__]
-        regex: 'stackdriver_cloudsql_googleapis_com_database_disk_bytes_used'
-        target_label: __name__
-        replacement: 'cloudsql_disk_used_bytes'
-
-   # 💡 GCP Node Exporter - CPU/Memory
-  # [수정] cloudflared access tcp 대신 CF Access 헤더로 직접 HTTPS scrape
+  # 💡 GCP Node Exporter - CPU/Memory (GCP 내부 직접 통신)
   - job_name: 'gcp-node-exporter'
-    scheme: https
-    metrics_path: '/metrics'
-    tls_config:
-      insecure_skip_verify: true
-    params: {}
-    http_headers:
-      CF-Access-Client-Id:
-        values: ["{{ cf_client_id }}"]
-      CF-Access-Client-Secret:
-        values: ["{{ cf_client_secret }}"]
     static_configs:
-      - targets: ['gcp-metrics.bucheongoyangijanggun.com']
+      - targets: ['{{ gcp_internal_ip }}:9100']
         labels:
           cluster: 'gcp'
           environment: 'prod'
 
-  # [추가] GCP App 메트릭 - HTTP 요청수/응답시간
-  # [수정] cloudflared access tcp 대신 CF Access 헤더로 직접 HTTPS scrape
+  # 💡 GCP App 메트릭 - HTTP 요청수/응답시간 (GCP 내부 직접 통신)
   - job_name: 'gcp-app-metrics'
-    scheme: https
-    metrics_path: '/metrics'
-    tls_config:
-      insecure_skip_verify: true
-    http_headers:
-      CF-Access-Client-Id:
-        values: ["{{ cf_client_id }}"]
-      CF-Access-Client-Secret:
-        values: ["{{ cf_client_secret }}"]
-
     static_configs:
-      - targets: ['gcp-app.bucheongoyangijanggun.com']
+      - targets: ['{{ gcp_internal_ip }}:30800']
         labels:
           cluster: 'gcp'
           service: 'backend'
@@ -108,9 +65,17 @@ scrape_configs:
         target_label: __name__
         replacement: 'backend_http_request_duration_seconds_total'
 
-  # [추가] GCP kube-state-metrics - Pod/Container 상태
-  # [수정] cloudflared access tcp 대신 CF Access 헤더로 직접 HTTPS scrape
+  # 💡 GCP kube-state-metrics - Pod/Container 상태 (GCP 내부 직접 통신)
   - job_name: 'gcp-kube-state-metrics'
+    static_configs:
+      - targets: ['{{ gcp_internal_ip }}:30080']
+        labels:
+          cluster: 'gcp'
+          environment: 'prod'
+
+  # 💡 AWS App /metrics - CF Access 헤더로 HTTPS scrape
+  # 모니터링이 GCP로 이전되면서 AWS VPC 직접 접근 불가 → CF Tunnel 경유
+  - job_name: 'aws-app-metrics'
     scheme: https
     metrics_path: '/metrics'
     tls_config:
@@ -120,23 +85,8 @@ scrape_configs:
         values: ["{{ cf_client_id }}"]
       CF-Access-Client-Secret:
         values: ["{{ cf_client_secret }}"]
-
     static_configs:
-      - targets: ['gcp-ksm.bucheongoyangijanggun.com']
-        labels:
-          cluster: 'gcp'
-          environment: 'prod'
-
-  # 💡 AWS App /metrics + Node Exporter
-  # Same VPC Direct Scrape
-  # App /metrics 포트: 8000
-  # Node Exporter 포트: 9100
-  - job_name: 'aws-app-metrics'
-    scheme: http
-    metrics_path: '/metrics'
-    static_configs:
-      - targets:
-          - "{{ aws_ip }}:8000"
+      - targets: ['aws-app.bucheongoyangijanggun.com']
         labels:
           cluster: 'aws'
           service: 'backend'
@@ -162,24 +112,36 @@ scrape_configs:
         target_label: __name__
         replacement: 'backend_http_request_duration_seconds_total'
 
+  # 💡 AWS Node Exporter - CF Access 헤더로 HTTPS scrape
   - job_name: 'aws-node-exporter'
-    scheme: http
+    scheme: https
     metrics_path: '/metrics'
+    tls_config:
+      insecure_skip_verify: true
+    http_headers:
+      CF-Access-Client-Id:
+        values: ["{{ cf_client_id }}"]
+      CF-Access-Client-Secret:
+        values: ["{{ cf_client_secret }}"]
     static_configs:
-      - targets:
-          - "{{ aws_ip }}:9100"
+      - targets: ['aws-node.bucheongoyangijanggun.com']
         labels:
           cluster: 'aws'
           environment: 'prod'
 
-  # [추가] AWS kube-state-metrics - Pod/Container 상태
-  # AWS는 Same VPC Direct Scrape이므로 CF Tunnel 불필요
+  # [추가] AWS kube-state-metrics - CF Access 헤더로 HTTPS scrape
   - job_name: 'aws-kube-state-metrics'
-    scheme: http
+    scheme: https
     metrics_path: '/metrics'
+    tls_config:
+      insecure_skip_verify: true
+    http_headers:
+      CF-Access-Client-Id:
+        values: ["{{ cf_client_id }}"]
+      CF-Access-Client-Secret:
+        values: ["{{ cf_client_secret }}"]
     static_configs:
-      - targets:
-          - "{{ aws_ip }}:30080"
+      - targets: ['aws-ksm.bucheongoyangijanggun.com']
         labels:
           cluster: 'aws'
           environment: 'prod'

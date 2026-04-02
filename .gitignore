@@ -17,9 +17,14 @@ Thumbs.db
 *.key
 *.crt
 *.p12
+.vault_pass
 
 # kubernetes
 *.kubeconfig
+infra/ansible/configs/
+
+# terraform이 자동 생성 (IP/토큰 등 민감 정보 포함)
+infra/ansible/inventory.ini
 
 # temp
 tmp/

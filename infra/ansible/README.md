@@ -38,12 +38,12 @@ ansible/
 
 `playbook.yml` 실행 시 호스트 그룹에 따라 아래 순서로 역할을 수행합니다.
 
-| Play               | 대상 호스트                | 수행 작업                                                               |
-| ------------------ | -------------------------- | ----------------------------------------------------------------------- |
-| Node Exporter 설치 | `aws_nodes`, `gcp_primary` | Node Exporter v1.7.0 설치 및 systemd 등록                               |
-| GCP K3s 구축       | `gcp_primary`              | K3s 독립 클러스터 설치                                                  |
-| AWS K3s 구축       | `aws_nodes`                | K3s 독립 클러스터 설치                                                  |
-| 모니터링 센터 구축 | `aws-monitor`              | Docker CE 설치 → Prometheus / Grafana / Alertmanager / Discord Bot 실행 |
+| Play               | 대상 호스트                         | 수행 작업                                                               |
+| ------------------ | ----------------------------------- | ----------------------------------------------------------------------- |
+| Node Exporter 설치 | `aws_nodes`, `gcp_primary`          | Node Exporter v1.7.0 설치 및 systemd 등록                               |
+| GCP K3s 구축       | `gcp_primary`                       | K3s 독립 클러스터 설치                                                  |
+| AWS K3s 구축       | `aws_nodes`                         | K3s 독립 클러스터 설치                                                  |
+| 모니터링 센터 구축 | `gcp_monitoring` (`gcp-monitor`)    | Docker CE 설치 → Prometheus / Grafana / Alertmanager / Discord Bot 실행 |
 
 > Bastion 서버에는 Node Exporter를 설치하지 않습니다.  
 > cloudflared는 EC2 `user_data`에서 서버 생성 시 자동 설치됩니다. (Ansible 불필요)
@@ -66,21 +66,24 @@ pip install ansible
 
 ```ini
 [gcp_primary]
-gcp-main ansible_host=<GCP_IP> tunnel_token=<...> db_conn=<...>
+gcp-main ansible_host=<GCP_K3S_IP> tunnel_token=<...> db_conn=<...>
+
+[gcp_monitoring]
+gcp-monitor ansible_host=<GCP_MONITORING_IP> tunnel_token=<...>
 
 [aws_bastion]
 aws-bastion ansible_host=<BASTION_PUBLIC_IP>
 
 [aws_nodes]
-aws-sub     ansible_host=<K3S_PRIVATE_IP>         tunnel_token=<...>
-aws-monitor ansible_host=<MONITORING_PRIVATE_IP>  tunnel_token=<...>
+aws-sub ansible_host=<K3S_PRIVATE_IP> tunnel_token=<...>
 
 [aws_nodes:vars]
-# K3s / Monitoring은 Private Subnet → Bastion ProxyCommand 경유
+# K3s는 Private Subnet → Bastion ProxyCommand 경유
 ansible_ssh_common_args='-o ProxyCommand="ssh -W %h:%p -q ubuntu@<BASTION_IP> ..."'
 
 [all:vars]
 ansible_user=ubuntu
+gcp_internal_ip=<GCP_K3S_INTERNAL_IP>   # Prometheus 내부 직접 scrape용
 cf_client_id="<...>"
 cf_client_secret="<...>"
 ```
@@ -127,7 +130,7 @@ ansible-playbook playbook.yml -e "storage_setup_enabled=false"
 ### 특정 호스트만 실행
 
 ```bash
-ansible-playbook playbook.yml --limit aws-monitor -e "storage_setup_enabled=false"
+ansible-playbook playbook.yml --limit gcp-monitor -e "storage_setup_enabled=false"
 ansible-playbook playbook.yml --limit gcp_primary
 ansible-playbook playbook.yml --limit aws_nodes
 ```
@@ -148,6 +151,8 @@ ansible-playbook playbook.yml --limit aws_nodes
 
 ## 참고사항
 
-- K3s / Monitoring 서버는 Private Subnet에 배치되어 있어 Bastion ProxyCommand를 경유해서 접속합니다.
-- Prometheus는 Cloudflare Zero Trust Tunnel을 경유해서 GCP / AWS 메트릭을 수집합니다. (`CF-Access` 헤더 인증)
+- AWS K3s 서버는 Private Subnet에 배치되어 있어 Bastion ProxyCommand를 경유해서 접속합니다.
+- GCP K3s / Monitoring 서버는 공인 IP로 직접 SSH 접속합니다.
+- GCP 메트릭(node-exporter / app / kube-state-metrics)은 GCP 내부 IP(`gcp_internal_ip`)로 직접 수집합니다.
+- AWS 메트릭은 Cloudflare Zero Trust Tunnel을 경유합니다. (`CF-Access` 헤더 인증)
 - `monitoring` role은 Jinja2 템플릿(`templates/*.j2`)을 렌더링하여 설정을 서버에 배포합니다.

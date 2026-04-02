@@ -1,5 +1,5 @@
 # 1. 모니터링 관련 기본 설정
-storage_setup_enabled: true # EBS 볼륨을 사용할지 여부 (true/false) false 면 로컬, true 면 EBS 볼륨 사용
+storage_setup_enabled: false # EBS 볼륨을 사용할지 여부 (GCP는 EBS 불필요)
 ebs_device_name: "/dev/nvme1n1"
 monitoring_base_dir: "/home/ubuntu/monitoring"
 

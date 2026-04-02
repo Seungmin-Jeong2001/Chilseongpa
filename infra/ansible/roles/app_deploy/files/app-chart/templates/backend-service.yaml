@@ -5,6 +5,7 @@ metadata:
   labels: 
     app: backend
 spec:
+  type: NodePort       # 👈 추가
   selector:
     app: backend
   ports:
@@ -12,3 +13,4 @@ spec:
       protocol: TCP
       port: 8000
       targetPort: 8000
+      nodePort: 30800  # 👈 추가 (cloudflared가 바라볼 포트)

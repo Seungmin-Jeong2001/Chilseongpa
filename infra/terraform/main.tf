@@ -53,17 +53,16 @@ module "aws" {
   source             = "./modules/aws"
   project_name       = var.project_name
   environment        = var.environment
-  
+
   # 네트워크 설정 (기존 network 모듈의 역할을 내재화)
   vpc_cidr           = var.vpc_cidr
   public_subnet_cidr  = var.public_subnet_cidr
   private_subnet_cidr = var.private_subnet_cidr
   availability_zone  = var.availability_zone
-  
+
   # Cloudflare 터널 토큰 주입
-  aws_tunnel_token        = module.cloudflare.aws_tunnel_token
-  monitoring_tunnel_token = module.cloudflare.monitoring_tunnel_token
-  
+  aws_tunnel_token = module.cloudflare.aws_tunnel_token
+
   # 기타 변수 (인스턴스 타입, 키페어 등)
   key_name           = var.key_name
   allowed_ssh_cidr   = var.allowed_ssh_cidr
@@ -72,29 +71,27 @@ module "aws" {
   instance_type    = var.instance_type    # k3s 노드 인스턴스 타입
   bastion_type     = var.bastion_type     # Bastion 인스턴스 타입
   root_volume_size = var.root_volume_size # Root EBS 볼륨 크기
-
-  # Monitoring Server 인스턴스 타입 및 볼륨 설정
-  monitoring_instance_type = var.monitoring_instance_type
-  monitoring_volume_size   = var.monitoring_volume_size
 }
 
 # -------------------------------------------------------------------
 # 4. GCP 모듈 (Primary 인프라)
 # Cloudflare 터널 토큰을 주입받아 메인 서비스를 구동합니다.
 # -------------------------------------------------------------------
-module "gcp" { # gcp 클라우드 코드 추가 안하면서 오류 코드 남아 있음
+module "gcp" {
   source       = "./modules/gcp"
   project_name = var.project_name
   environment  = var.environment
-  gcp_project_id   = var.gcp_project_id
-  gcp_region       = var.gcp_region
-  gcp_zone         = var.gcp_zone
-  
+  gcp_project_id  = var.gcp_project_id
+  gcp_region      = var.gcp_region
+  gcp_zone        = var.gcp_zone
+  gcp_subnet_cidr = var.gcp_subnet_cidr
+
   # Cloudflare 터널 토큰 주입
-  tunnel_token = module.cloudflare.gcp_tunnel_token
-  
+  tunnel_token            = module.cloudflare.gcp_tunnel_token
+  monitoring_tunnel_token = module.cloudflare.monitoring_tunnel_token
+
   # 보안 주입 변수
-  gcp_db_password  = var.gcp_db_password
+  gcp_db_password    = var.gcp_db_password
   gcp_ssh_public_key = var.gcp_ssh_public_key
-  gcp_credentials  = var.gcp_credentials
+  gcp_credentials    = var.gcp_credentials
 }

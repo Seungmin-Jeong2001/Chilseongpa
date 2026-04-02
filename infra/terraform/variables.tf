@@ -37,6 +37,12 @@ variable "gcp_zone" {
   default     = "asia-northeast3-a"
 }
 
+variable "gcp_subnet_cidr" {
+  description = "GCP 서브넷 CIDR (AWS 10.20.0.0/16과 충돌 없는 대역)"
+  type        = string
+  default     = "10.30.0.0/24"
+}
+
 variable "gcp_db_password" {
   description = "Cloud SQL Root 비밀번호"
   type        = string
@@ -121,22 +127,6 @@ variable "key_name" {
   description = "AWS Key Pair name"
   type        = string
 }
-
-# Monitoring Server 인스턴스 타입
-variable "monitoring_instance_type" {
-  description = "Monitoring Server EC2 instance type"
-  type        = string
-  default     = "t3.small"
-}
-
-# Monitoring Server EBS Volume 크기
-# Prometheus TSDB 저장 공간 확보 목적
-variable "monitoring_volume_size" {
-  description = "Monitoring Server EBS volume size (GB)"
-  type        = number
-  default     = 30
-}
-
 
 # -----------------------------------------------
 # Cloudflare variables

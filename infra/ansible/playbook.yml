@@ -27,8 +27,10 @@
     
 
 - name: "모니터링 및 알림 센터 구축"
-  hosts: aws-monitor # 👈 monitoring에서 aws-monitor로 수정
+  hosts: gcp-monitor
   become: yes
+  vars_files:
+    - group_vars/vault.yml
   roles:
     - docker
     - monitoring
