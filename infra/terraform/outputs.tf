@@ -71,15 +71,15 @@ output "ssh_commands" {
 
 
 # SSH Agent 시작 및 키 추가 (로컬에서 실행)
-eval $(ssh-agent -s) \
-ssh-add ../../chilseongpa_keypair.pem \
-ssh-add ../../my_gcp_key \
+eval $(ssh-agent -s)
+ssh-add ../../chilseongpa_keypair.pem
+ssh-add ../../my_gcp_key
 ssh-add -l
 
 # 변수 주입
-set -a \
-source ./group_vars/.env \
-set +a \
+set -a
+source ./group_vars/.env
+set +a
 echo $DISCORD_BOT_TOKEN
 
 # Bastion Host
@@ -89,10 +89,10 @@ ssh -i ../../chilseongpa_keypair.pem ubuntu@${module.aws.bastion_public_ip}
 ssh -i ../../chilseongpa_keypair.pem -A -J ubuntu@${module.aws.bastion_public_ip} ubuntu@${module.aws.k3s_private_ip}
 
 # GCP k3s
-ssh -i ~/my_gcp_key ubuntu@${module.gcp.k3s_ephemeral_ip}
+ssh -i ../../my_gcp_key ubuntu@${module.gcp.k3s_ephemeral_ip}
 
 # GCP Monitoring
-ssh -i ~/my_gcp_key ubuntu@${module.gcp.monitoring_ephemeral_ip}
+ssh -i ../../my_gcp_key ubuntu@${module.gcp.monitoring_ephemeral_ip}
 
 ===========================================
 EOT

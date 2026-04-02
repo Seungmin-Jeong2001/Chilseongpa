@@ -17,7 +17,14 @@ spec:
               name: backend-svc
               port:
                 number: 8000
-        - path: /health 
+        - path: /health
+          pathType: Prefix
+          backend:
+            service:
+              name: backend-svc
+              port:
+                number: 8000
+        - path: /metrics
           pathType: Prefix
           backend:
             service:

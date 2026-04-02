@@ -38,7 +38,7 @@ resource "google_compute_firewall" "allow_ssh" {
 
 # -------------------------------------------------------------------
 # 방화벽: 내부 메트릭 수집 (monitoring-node → k3s-node)
-# Node Exporter(9100), App metrics(8000)
+# Node Exporter(9100), App metrics NodePort(30800), kube-state-metrics NodePort(30080)
 # -------------------------------------------------------------------
 resource "google_compute_firewall" "allow_internal_metrics" {
   name    = "${var.project_name}-${var.environment}-allow-internal-metrics"
@@ -46,7 +46,7 @@ resource "google_compute_firewall" "allow_internal_metrics" {
 
   allow {
     protocol = "tcp"
-    ports    = ["9100", "8000"]
+    ports    = ["9100", "30800", "30080"]
   }
 
   target_tags = ["k3s-node"]

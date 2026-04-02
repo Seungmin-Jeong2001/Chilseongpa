@@ -17,6 +17,7 @@ Thumbs.db
 *.key
 *.crt
 *.p12
+.vault_pass
 
 # kubernetes
 *.kubeconfig

@@ -11,7 +11,7 @@
   when: k3s_installed.rc != 0
 
 - name: K3s 서비스 시작 및 활성화
-  systemd:
+  ansible.builtin.systemd:
     name: k3s
     state: started
     enabled: yes
@@ -85,5 +85,13 @@
     path: "{{ playbook_dir }}/configs/kubeconfig-{{ inventory_hostname }}.yaml"
     regexp: 'https://127.0.0.1:6443'
     replace: "https://{{ ansible_host }}:6443"
+  become: false
+  when: inventory_hostname in ['gcp-main', 'aws-sub']
+
+- name: Set local kubeconfig permissions
+  delegate_to: localhost
+  ansible.builtin.file:
+    path: "{{ playbook_dir }}/configs/kubeconfig-{{ inventory_hostname }}.yaml"
+    mode: '0600'
   become: false
   when: inventory_hostname in ['gcp-main', 'aws-sub']
