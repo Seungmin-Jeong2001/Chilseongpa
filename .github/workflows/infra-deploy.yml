@@ -25,7 +25,7 @@ jobs:
       TF_VAR_environment: ${{ secrets.ENVIRONMENT }}
       TF_VAR_gcp_project_id: ${{ secrets.GCP_PROJECT_ID }}
       TF_VAR_gcp_db_password: ${{ secrets.GCP_DB_PASSWORD }}
-      TF_VAR_gcp_credentials: "./gcp-creds.json"
+      TF_VAR_gcp_credentials: "${{ github.workspace }}/infra/terraform/gcp-creds.json"
       TF_VAR_gcp_ssh_public_key: ${{ secrets.SSH_GCP_KEY_PUB }}
       TF_VAR_cf_api_token: ${{ secrets.CF_API_TOKEN }}
       TF_VAR_cf_account_id: ${{ secrets.CF_ACCOUNT_ID }}
@@ -35,7 +35,7 @@ jobs:
       TF_VAR_aws_region: ${{ secrets.AWS_REGION }}
       
       # 💡 GCS Backend 인증용 핵심 환경 변수
-      GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/infra/terraform/gcp-creds.json
+      GOOGLE_APPLICATION_CREDENTIALS: "${{ github.workspace }}/infra/terraform/gcp-creds.json"
       
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -66,15 +66,24 @@ jobs:
         id: outputs
         working-directory: infra/terraform
         run: |
+          # 1. 데이터를 변수에 담기
           INV_DATA=$(terraform output -json ansible_inventory_data)
           DB_KEY=$(terraform output -raw gcp_db_proxy_sa_key)
-          GCP_IP=$(echo $INV_DATA | jq -r .gcp_ip)
-          GCP_MON_IP=$(echo $INV_DATA | jq -r .gcp_mon_ip)
           
-          echo "inventory_data=$INV_DATA" >> $GITHUB_OUTPUT
-          echo "db_sa_key=$DB_KEY" >> $GITHUB_OUTPUT
+          # 2. IP 추출 (단순 문자열)
+          GCP_IP=$(echo "$INV_DATA" | jq -r .gcp_ip)
+          GCP_MON_IP=$(echo "$INV_DATA" | jq -r .gcp_mon_ip)
           echo "gcp_k3s_ip=$GCP_IP" >> $GITHUB_OUTPUT
           echo "gcp_mon_ip=$GCP_MON_IP" >> $GITHUB_OUTPUT
+          
+          # 3. 긴 JSON 및 시크릿 데이터를 EOF 방식을 사용하여 안전하게 출력
+          echo "inventory_data<<EOF" >> $GITHUB_OUTPUT
+          echo "$INV_DATA" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "db_sa_key<<EOF" >> $GITHUB_OUTPUT
+          echo "$DB_KEY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
   ansible:
     name: Deployment (Ansible)

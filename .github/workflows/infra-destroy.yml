@@ -13,23 +13,28 @@ jobs:
     name: Terraform Destroy
     if: github.event.inputs.confirm == 'destroy'
     runs-on: ubuntu-latest
+env:
+  # Terraform Variables
+  TF_VAR_project_name: ${{ secrets.PROJECT_NAME }}
+  TF_VAR_environment: ${{ secrets.ENVIRONMENT }}
+  TF_VAR_gcp_project_id: ${{ secrets.GCP_PROJECT_ID }}
+  TF_VAR_gcp_db_password: ${{ secrets.GCP_DB_PASSWORD }}
+  TF_VAR_gcp_credentials: "${{ github.workspace }}/infra/terraform/gcp-creds.json"
+  TF_VAR_gcp_ssh_public_key: ${{ secrets.SSH_GCP_KEY_PUB }}
+  TF_VAR_cf_api_token: ${{ secrets.CF_API_TOKEN }}
+  TF_VAR_cf_account_id: ${{ secrets.CF_ACCOUNT_ID }}
+  TF_VAR_cf_zone_id: ${{ secrets.CF_ZONE_ID }}
+  TF_VAR_cf_tunnel_secret: ${{ secrets.CF_TUNNEL_SECRET }}
+  TF_VAR_key_name: ${{ secrets.AWS_KEY_NAME }}
+  TF_VAR_aws_region: ${{ secrets.AWS_REGION }}
 
-    env:
-      TF_VAR_project_name: ${{ secrets.PROJECT_NAME }}
-      TF_VAR_environment: ${{ secrets.ENVIRONMENT }}
-      TF_VAR_gcp_project_id: ${{ secrets.GCP_PROJECT_ID }}
-      TF_VAR_gcp_db_password: ${{ secrets.GCP_DB_PASSWORD }}
-      TF_VAR_gcp_credentials: "./gcp-creds.json"
-      TF_VAR_gcp_ssh_public_key: ${{ secrets.SSH_GCP_KEY_PUB }}
-      TF_VAR_cf_api_token: ${{ secrets.CF_API_TOKEN }}
-      TF_VAR_cf_account_id: ${{ secrets.CF_ACCOUNT_ID }}
-      TF_VAR_cf_zone_id: ${{ secrets.CF_ZONE_ID }}
-      TF_VAR_cf_tunnel_secret: ${{ secrets.CF_TUNNEL_SECRET }}
-      TF_VAR_key_name: ${{ secrets.AWS_KEY_NAME }}
-      TF_VAR_aws_region: ${{ secrets.AWS_REGION }}
-      
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  # 💡 GCS Backend 인증용 핵심 환경 변수 (절대 경로)
+  GOOGLE_APPLICATION_CREDENTIALS: "${{ github.workspace }}/infra/terraform/gcp-creds.json"
+
+  # Cloud Provider Credentials
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
 
     steps:
       - name: Checkout Code
