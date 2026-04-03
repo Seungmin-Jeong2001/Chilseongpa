@@ -147,13 +147,20 @@ jobs:
         id: k3s_step
         working-directory: infra/ansible
         run: |
-          # 1. K3s 설치 및 Kubeconfig 생성
+          # 1. Vault 비밀번호 파일 생성
+          echo "${{ secrets.VAULT_PASSWORD }}" > .vault_pass
+          chmod 600 .vault_pass
+
+          # 2. K3s 설치 및 Kubeconfig 생성
           ANSIBLE_LOG=$(ansible-playbook -i inventory.ini playbook.yml \
             --limit "gcp-main,aws-sub" \
             --extra-vars "ansible_ssh_private_key_file=~/.ssh/id_gcp" \
-            --vault-password-string "${{ secrets.VAULT_PASSWORD }}")
+            --vault-password-file .vault_pass)
           
-          # 2. 로그에서 Kubeconfig 내용 추출 (보안 주의)
+          # 3. 비밀번호 파일 삭제
+          rm .vault_pass
+          
+          # 4. 로그에서 Kubeconfig 내용 추출 (보안 주의)
           KUBECONFIG_GCP=$(echo "$ANSIBLE_LOG" | grep -oP 'KUBECONFIG_CONTENT_gcp-main:\K.*' | tr -d '\r')
           KUBECONFIG_AWS=$(echo "$ANSIBLE_LOG" | grep -oP 'KUBECONFIG_CONTENT_aws-sub:\K.*' | tr -d '\r')
           
@@ -163,6 +170,9 @@ jobs:
       - name: Run Ansible (Monitoring & Bot Deploy)
         working-directory: infra/ansible
         run: |
+          echo "${{ secrets.VAULT_PASSWORD }}" > .vault_pass
+          chmod 600 .vault_pass
+
           ansible-playbook -i inventory.ini playbook.yml \
             --limit "gcp-monitor" \
             --extra-vars "ansible_ssh_private_key_file=~/.ssh/id_gcp" \
@@ -181,4 +191,6 @@ jobs:
             --extra-vars "discord_webhook_url=${{ secrets.DISCORD_WEBHOOK_URL }}" \
             --extra-vars "gcp_db_password=${{ secrets.GCP_DB_PASSWORD }}" \
             --extra-vars "@group_vars/vault.yml" \
-            --vault-password-string "${{ secrets.VAULT_PASSWORD }}"
+            --vault-password-file .vault_pass
+
+          rm .vault_pass
