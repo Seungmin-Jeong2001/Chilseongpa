@@ -2,11 +2,11 @@ name: Infrastructure Destroy (Manual)
 
 on:
   workflow_dispatch:
-    inputs:
-      confirm:
-        description: "Input \"destroy\"를 입력하세요"
-        required: true
-        default: 'none' 
+    # inputs:
+    #   confirm:
+    #     description: "Input \"destroy\"를 입력하세요"
+    #     required: true
+    #     default: 'none' 
 
 jobs:
   terraform-destroy:
