@@ -103,8 +103,8 @@
     dest: "{{ monitoring_base_dir }}/configs/{{ item.name }}"
     mode: '0600'
   loop:
-    - { name: "kubeconfig-gcp-main.yaml", content: "{{ kubeconfig_gcp_content | default('') }}" }
-    - { name: "kubeconfig-aws-sub.yaml", content: "{{ kubeconfig_aws_content | default('') }}" }
+    - { name: "kubeconfig-gcp-main.yaml", content: "{{ hostvars['gcp-main']['generated_kubeconfig'] | default(kubeconfig_gcp_content) | default('') }}" }
+    - { name: "kubeconfig-aws-sub.yaml", content: "{{ hostvars['aws-sub']['generated_kubeconfig'] | default(kubeconfig_aws_content) | default('') }}" }
   when: item.content != ""
 
 - name: Create GCP DB SA Key file from variable

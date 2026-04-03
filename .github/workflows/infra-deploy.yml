@@ -90,6 +90,9 @@ jobs:
     needs: terraform
     runs-on: ubuntu-latest
     
+    env:
+      ANSIBLE_VAULT_PASSWORD_FILE: ${{ github.workspace }}/infra/ansible/.vault_pass
+    
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -100,8 +103,16 @@ jobs:
           echo "${{ secrets.SSH_GCP_KEY }}" > ~/.ssh/id_gcp
           echo "${{ secrets.SSH_AWS_KEY }}" > ~/.ssh/id_aws
           chmod 600 ~/.ssh/id_gcp ~/.ssh/id_aws
-          ssh-keyscan -H ${{ needs.terraform.outputs.gcp_k3s_ip }} >> ~/.ssh/known_hosts
-          ssh-keyscan -H ${{ needs.terraform.outputs.gcp_mon_ip }} >> ~/.ssh/known_hosts
+          
+          # Scan GCP and AWS Bastion IPs
+          INV_JSON='${{ needs.terraform.outputs.inventory_data }}'
+          GCP_IP=$(echo $INV_JSON | jq -r .gcp_ip)
+          GCP_MON_IP=$(echo $INV_JSON | jq -r .gcp_mon_ip)
+          BASTION_IP=$(echo $INV_JSON | jq -r .bastion_ip)
+          
+          ssh-keyscan -H $GCP_IP >> ~/.ssh/known_hosts
+          ssh-keyscan -H $GCP_MON_IP >> ~/.ssh/known_hosts
+          ssh-keyscan -H $BASTION_IP >> ~/.ssh/known_hosts
 
       - name: Prepare Inventory
         working-directory: infra/ansible
@@ -125,7 +136,17 @@ jobs:
           [aws_nodes]
           aws-sub ansible_host=$AWS_IP tunnel_token=$(echo $INV_JSON | jq -r .aws_token)
 
+          [gcp_primary:vars]
+          ansible_ssh_private_key_file=~/.ssh/id_gcp
+
+          [gcp_monitoring:vars]
+          ansible_ssh_private_key_file=~/.ssh/id_gcp
+
+          [aws_bastion:vars]
+          ansible_ssh_private_key_file=~/.ssh/id_aws
+
           [aws_nodes:vars]
+          ansible_ssh_private_key_file=~/.ssh/id_aws
           ansible_ssh_common_args='-o ProxyCommand="ssh -W %h:%p -q ubuntu@$BASTION_IP -i ~/.ssh/id_aws -o StrictHostKeyChecking=no"'
 
           [all:vars]
@@ -138,46 +159,21 @@ jobs:
           prometheus_domain=$(echo $INV_JSON | jq -r .prometheus_domain)
           EOF
 
-      - name: Install Ansible
+      - name: Install Ansible and Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y ansible
+          ansible-galaxy collection install -r infra/ansible/requirements.yml
 
-      - name: Run Ansible (K3s Setup & Kubeconfig Capture)
-        id: k3s_step
+      - name: Create Vault Password File
+        run: |
+          echo "${{ secrets.VAULT_PASSWORD }}" > ${{ env.ANSIBLE_VAULT_PASSWORD_FILE }}
+          chmod 600 ${{ env.ANSIBLE_VAULT_PASSWORD_FILE }}
+
+      - name: Run Ansible Playbook
         working-directory: infra/ansible
         run: |
-          # 1. Vault 비밀번호 파일 생성
-          echo "${{ secrets.VAULT_PASSWORD }}" > .vault_pass
-          chmod 600 .vault_pass
-
-          # 2. K3s 설치 및 Kubeconfig 생성
-          ANSIBLE_LOG=$(ansible-playbook -i inventory.ini playbook.yml \
-            --limit "gcp-main,aws-sub" \
-            --extra-vars "ansible_ssh_private_key_file=~/.ssh/id_gcp" \
-            --vault-password-file .vault_pass)
-          
-          # 3. 비밀번호 파일 삭제
-          rm .vault_pass
-          
-          # 4. 로그에서 Kubeconfig 내용 추출 (보안 주의)
-          KUBECONFIG_GCP=$(echo "$ANSIBLE_LOG" | grep -oP 'KUBECONFIG_CONTENT_gcp-main:\K.*' | tr -d '\r')
-          KUBECONFIG_AWS=$(echo "$ANSIBLE_LOG" | grep -oP 'KUBECONFIG_CONTENT_aws-sub:\K.*' | tr -d '\r')
-          
-          echo "kubeconfig_gcp=$KUBECONFIG_GCP" >> $GITHUB_ENV
-          echo "kubeconfig_aws=$KUBECONFIG_AWS" >> $GITHUB_ENV
-
-      - name: Run Ansible (Monitoring & Bot Deploy)
-        working-directory: infra/ansible
-        run: |
-          echo "${{ secrets.VAULT_PASSWORD }}" > .vault_pass
-          chmod 600 .vault_pass
-
           ansible-playbook -i inventory.ini playbook.yml \
-            --limit "gcp-monitor" \
-            --extra-vars "ansible_ssh_private_key_file=~/.ssh/id_gcp" \
-            --extra-vars "kubeconfig_gcp_content='${{ env.kubeconfig_gcp }}'" \
-            --extra-vars "kubeconfig_aws_content='${{ env.kubeconfig_aws }}'" \
             --extra-vars "gcp_db_sa_content='${{ needs.terraform.outputs.db_sa_key }}'" \
             --extra-vars "project_name=${{ secrets.PROJECT_NAME }}" \
             --extra-vars "environment=${{ secrets.ENVIRONMENT }}" \
@@ -190,7 +186,8 @@ jobs:
             --extra-vars "discord_channel_id=${{ secrets.DISCORD_CHANNEL_ID }}" \
             --extra-vars "discord_webhook_url=${{ secrets.DISCORD_WEBHOOK_URL }}" \
             --extra-vars "gcp_db_password=${{ secrets.GCP_DB_PASSWORD }}" \
-            --extra-vars "@group_vars/vault.yml" \
-            --vault-password-file .vault_pass
+            --extra-vars "@group_vars/vault.yml"
 
-          rm .vault_pass
+      - name: Cleanup Vault Password File
+        if: always()
+        run: rm -f ${{ env.ANSIBLE_VAULT_PASSWORD_FILE }}
