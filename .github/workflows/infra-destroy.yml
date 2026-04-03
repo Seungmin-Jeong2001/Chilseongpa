@@ -18,7 +18,6 @@ jobs:
       TF_VAR_project_name: ${{ secrets.PROJECT_NAME }}
       TF_VAR_environment: ${{ secrets.ENVIRONMENT }}
       TF_VAR_gcp_project_id: ${{ secrets.GCP_PROJECT_ID }}
-      # 추가: main.tf에서 사용하는 gcp_region 변수 주입 필요
       TF_VAR_gcp_region: ${{ secrets.GCP_REGION }} 
       TF_VAR_gcp_db_password: ${{ secrets.GCP_DB_PASSWORD }}
       TF_VAR_gcp_credentials: "${{ github.workspace }}/infra/terraform/gcp-creds.json"
