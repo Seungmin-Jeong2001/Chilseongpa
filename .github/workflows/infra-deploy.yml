@@ -34,6 +34,9 @@ jobs:
       TF_VAR_key_name: ${{ secrets.AWS_KEY_NAME }}
       TF_VAR_aws_region: ${{ secrets.AWS_REGION }}
       
+      # 💡 GCS Backend 인증용 핵심 환경 변수
+      GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/infra/terraform/gcp-creds.json
+      
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
