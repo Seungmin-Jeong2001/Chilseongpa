@@ -17,18 +17,14 @@
     state: started
     enabled: yes
 
-# ---------------------------------------------------------
 # 2. [완성형] Kube-state-metrics 배포 (Raw 파일 직접 설치)
-# ---------------------------------------------------------
-- name: Deploy kube-state-metrics (Individual Raw Manifests)
+- name: Deploy kube-state-metrics
   shell: |
-    # 💡 깃허브 Raw 주소를 사용하여 필수 파일 5개를 순서대로 확실하게 설치합니다.
     BASE_URL="https://raw.githubusercontent.com/kubernetes/kube-state-metrics/v2.10.0/examples/standard"
     for file in service-account.yaml cluster-role.yaml cluster-role-binding.yaml service.yaml deployment.yaml; do
       kubectl apply -f ${BASE_URL}/${file}
     done
     
-    # 💡 기존 서비스 삭제 후 팀장님 스타일의 NodePort 서비스로 재생성
     kubectl delete svc kube-state-metrics -n kube-system --ignore-not-found
     kubectl apply -f - <<EOF
     apiVersion: v1
@@ -48,19 +44,18 @@
   environment:
     KUBECONFIG: /etc/rancher/k3s/k3s.yaml
   when: inventory_hostname in ['gcp-main', 'aws-sub']
-  # 💡 실패 시 멈추지 않고 다음 태스크에서 상태를 확인할 수 있게 함
   register: ksm_deploy_result
   failed_when: ksm_deploy_result.rc != 0
 
-- name: Wait for KSM Deployment to be available
+- name: Wait for KSM Deployment
   shell: "kubectl wait --for=condition=available deployment/kube-state-metrics -n kube-system --timeout=120s"
   environment:
     KUBECONFIG: /etc/rancher/k3s/k3s.yaml
   when: inventory_hostname in ['gcp-main', 'aws-sub']
   changed_when: false
 
-# 3. AWS 전용: 영구 서비스 계정 및 토큰 생성
-- name: Create Bot ServiceAccount and Persistent Secret (AWS Only)
+# 3. AWS 전용: 영구 서비스 계정 및 토큰 생성 (Bot 접근용)
+- name: Create Bot Admin for AWS
   shell: |
     kubectl apply -f - <<EOF
     apiVersion: v1
@@ -95,8 +90,7 @@
     KUBECONFIG: /etc/rancher/k3s/k3s.yaml
   when: inventory_hostname == 'aws-sub'
 
-# 4. AWS 전용: 토큰 추출
-- name: Get Persistent Bot Token (AWS Only)
+- name: Get AWS Bot Token
   shell: "kubectl get secret bot-admin-token -n kube-system -o jsonpath='{.data.token}' | base64 -d"
   register: aws_bot_token_raw
   environment:
@@ -104,113 +98,39 @@
   when: inventory_hostname == 'aws-sub'
   changed_when: false
 
-# 5. 공통: Kubeconfig 로컬 Fetch
-- name: Ensure local configs directory exists
-  delegate_to: localhost
-  become: false
-  ansible.builtin.file:
-    path: "{{ playbook_dir }}/configs"
-    state: directory
-    mode: '0755'
-  run_once: true
-
-- name: Fetch kubeconfig from masters
-  ansible.builtin.fetch:
+# 4. Kubeconfig 정보 추출 및 외부용 변환 (핵심 보완)
+- name: Slurp kubeconfig from master
+  ansible.builtin.slurp:
     src: /etc/rancher/k3s/k3s.yaml
-    dest: "{{ playbook_dir }}/configs/kubeconfig-{{ inventory_hostname }}.yaml"
-    flat: yes
+  register: k3s_config_encoded
   become: yes
   when: inventory_hostname in ['gcp-main', 'aws-sub']
-# ---------------------------------------------------------
-# 6. [GCP 전용 설정] 사설 IP 주입 및 CA 제거 (에러 수정 완료)
-# ---------------------------------------------------------
-- name: Setup GCP Kubeconfig (Internal IP)
-  delegate_to: localhost
-  become: false
-  block:
-    - name: Update server to internal IP
-      ansible.builtin.replace:
-        path: "{{ playbook_dir }}/configs/kubeconfig-{{ inventory_hostname }}.yaml"
-        regexp: 'https://127.0.0.1:6443'
-        replace: "https://{{ gcp_internal_ip }}:6443"
 
-    - name: Remove Certificate Authority data for GCP
-      ansible.builtin.lineinfile:
-        path: "{{ playbook_dir }}/configs/kubeconfig-{{ inventory_hostname }}.yaml"
-        regexp: 'certificate-authority-data: .*'
-        state: absent
-
-    - name: Add Insecure flag for GCP
-      ansible.builtin.lineinfile:
-        path: "{{ playbook_dir }}/configs/kubeconfig-{{ inventory_hostname }}.yaml"
-        insertafter: "server: https://{{ gcp_internal_ip }}:6443"
-        line: '    insecure-skip-tls-verify: true'
+- name: Set GCP Kubeconfig Fact
+  set_fact:
+    generated_kubeconfig: "{{ k3s_config_encoded.content | b64decode | regex_replace('https://127.0.0.1:6443', 'https://' + gcp_internal_ip + ':6443') }}"
   when: inventory_hostname == 'gcp-main'
 
-# ---------------------------------------------------------
-# 7. [AWS 전용 설정] 터널 주소 주입 및 토큰 인증으로 완전 교체
-# ---------------------------------------------------------
-- name: Setup AWS Kubeconfig (Token Auth via CF Tunnel)
-  delegate_to: localhost
-  become: false
-  block:
-    - name: Update server to CF domain
-      ansible.builtin.replace:
-        path: "{{ playbook_dir }}/configs/kubeconfig-{{ inventory_hostname }}.yaml"
-        regexp: 'https://127.0.0.1:6443'
-        replace: "https://aws-k8s.bucheongoyangijanggun.com"
-
-    - name: Remove Certificates (Cert 인증 방식 제거)
-      ansible.builtin.lineinfile:
-        path: "{{ playbook_dir }}/configs/kubeconfig-{{ inventory_hostname }}.yaml"
-        regexp: "{{ item }}"
-        state: absent
-      loop:
-        - 'certificate-authority-data: .*'
-        - 'client-certificate-data: .*'
-        - 'client-key-data: .*'
-
-    - name: Inject Persistent Token and Insecure flag
-      ansible.builtin.blockinfile:
-        path: "{{ playbook_dir }}/configs/kubeconfig-{{ inventory_hostname }}.yaml"
-        insertafter: 'user:'
-        block: |
-          # 💡 추출한 영구 토큰 자동 주입
-              token: {{ aws_bot_token_raw.stdout }}
-              insecure-skip-tls-verify: true
+- name: Set AWS Kubeconfig Fact (Token Auth + CA removal)
+  set_fact:
+    generated_kubeconfig: "{{ k3s_config_encoded.content | b64decode | 
+      regex_replace('https://127.0.0.1:6443', 'https://aws-k8s.bucheongoyangijanggun.com') |
+      regex_replace('certificate-authority-data: .*', 'insecure-skip-tls-verify: true') |
+      regex_replace('client-certificate-data: .*', '') |
+      regex_replace('client-key-data: .*', '') |
+      regex_replace('user:', 'user:\n    token: ' + aws_bot_token_raw.stdout) }}"
   when: inventory_hostname == 'aws-sub'
 
-# ---------------------------------------------------------
-# 8. 최종 권한 정리
-# ---------------------------------------------------------
-- name: Set local kubeconfig file permissions
-  delegate_to: localhost
-  become: false
-  ansible.builtin.file:
-    path: "{{ playbook_dir }}/configs/kubeconfig-{{ inventory_hostname }}.yaml"
-    mode: '0600'
+- name: Display Kubeconfig for GHA Capture
+  ansible.builtin.debug:
+    msg: "KUBECONFIG_CONTENT_{{ inventory_hostname }}:{{ generated_kubeconfig | regex_replace('\\n', '___NEWLINE___') }}"
   when: inventory_hostname in ['gcp-main', 'aws-sub']
 
-# ---------------------------------------------------------
-# 9. [핵심 수정] 원격 서버 Kubeconfig 표준화 (No configuration found 해결)
-# ---------------------------------------------------------
-- name: Ensure .kube directory exists for root
-  ansible.builtin.file:
-    path: ~/.kube
-    state: directory
-    mode: '0755'
-  when: inventory_hostname in ['gcp-main', 'aws-sub']
-
-- name: Symlink k3s config to default kubeconfig location
+# 5. 원격 서버 로컬용 심볼릭 링크 유지
+- name: Symlink k3s config for local use
   ansible.builtin.file:
     src: /etc/rancher/k3s/k3s.yaml
     dest: ~/.kube/config
     state: link
     force: yes
-  when: inventory_hostname in ['gcp-main', 'aws-sub']
-
-- name: Set permissions for k3s.yaml to be readable
-  ansible.builtin.file:
-    path: /etc/rancher/k3s/k3s.yaml
-    mode: '0644'
   when: inventory_hostname in ['gcp-main', 'aws-sub']

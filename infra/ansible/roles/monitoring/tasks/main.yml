@@ -89,16 +89,30 @@
     - { src: "datasource.yml.j2", dest: "grafana/provisioning/datasources/datasource.yml" }
     - { src: "dashboard.yml.j2", dest: "grafana/provisioning/dashboards/dashboard.yml" }
 
-- name: Copy Static Files (files/)
-  ansible.builtin.copy:
-    src: "{{ item.src }}"
-    dest: "{{ item.dest }}"
-    mode: "{{ item.mode | default('0644') }}"
+- name: Create Kubeconfig and Secrets directory
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
   loop:
-    - { src: "dashboard.json", dest: "{{ monitoring_base_dir }}/grafana/provisioning/dashboards/dashboard.json" }
-    - { src: "gcp-sa-key.json", dest: "/home/ubuntu/gcp-sa-key.json" }
-    - { src: "./configs/kubeconfig-gcp-main.yaml", dest: "{{ monitoring_base_dir }}/configs/kubeconfig-gcp-main.yaml", mode: "0600" }
-    - { src: "./configs/kubeconfig-aws-sub.yaml", dest: "{{ monitoring_base_dir }}/configs/kubeconfig-aws-sub.yaml", mode: "0600" }
+    - "{{ monitoring_base_dir }}/configs"
+
+- name: Create Kubeconfig files from variables
+  ansible.builtin.copy:
+    content: "{{ item.content }}"
+    dest: "{{ monitoring_base_dir }}/configs/{{ item.name }}"
+    mode: '0600'
+  loop:
+    - { name: "kubeconfig-gcp-main.yaml", content: "{{ kubeconfig_gcp_content | default('') }}" }
+    - { name: "kubeconfig-aws-sub.yaml", content: "{{ kubeconfig_aws_content | default('') }}" }
+  when: item.content != ""
+
+- name: Create GCP DB SA Key file from variable
+  ansible.builtin.copy:
+    content: "{{ gcp_db_sa_content | default('') }}"
+    dest: "/home/ubuntu/gcp-sa-key.json"
+    mode: '0600'
+  when: gcp_db_sa_content | default('') != ""
 
 # ---------------------------------------------------------
 # 4. [핵심] 이미지 사전 풀링 (Pre-pulling)
