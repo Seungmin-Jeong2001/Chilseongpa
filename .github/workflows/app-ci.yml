@@ -32,8 +32,8 @@ jobs:
           context: ./application/backend
           push: true
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.PROJECT_NAME }}-backend:latest
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.PROJECT_NAME }}-backend:${{ github.sha }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKERHUB_REPO }}:backend-prod-latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKERHUB_REPO }}:backend-prod-v1.0.${{ github.run_number }}
 
       - name: Build and Push Frontend
         uses: docker/build-push-action@v5
@@ -41,5 +41,5 @@ jobs:
           context: ./application/frontend
           push: true
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.PROJECT_NAME }}-frontend:latest
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.PROJECT_NAME }}-frontend:${{ github.sha }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKERHUB_REPO }}:frontend-prod-latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKERHUB_REPO }}:frontend-prod-v1.0.${{ github.run_number }}
