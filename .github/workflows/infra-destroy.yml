@@ -2,22 +2,24 @@ name: Infrastructure Destroy (Manual)
 
 on:
   workflow_dispatch:
-    # inputs:
-    #   confirm:
-    #     description: "Input \"destroy\"를 입력하세요"
-    #     required: true
-    #     default: 'none' 
+    inputs: # 주석 해제하여 입력 가능하게 수정
+      confirm:
+        description: "삭제를 확정하려면 'destroy'를 입력하세요"
+        required: true
+        default: 'none' 
 
 jobs:
   terraform-destroy:
     name: Terraform Destroy
+    # 입력값이 'destroy'일 때만 실행
     if: github.event.inputs.confirm == 'destroy'
     runs-on: ubuntu-latest
     env:
-      # Terraform Variables
       TF_VAR_project_name: ${{ secrets.PROJECT_NAME }}
       TF_VAR_environment: ${{ secrets.ENVIRONMENT }}
       TF_VAR_gcp_project_id: ${{ secrets.GCP_PROJECT_ID }}
+      # 추가: main.tf에서 사용하는 gcp_region 변수 주입 필요
+      TF_VAR_gcp_region: ${{ secrets.GCP_REGION }} 
       TF_VAR_gcp_db_password: ${{ secrets.GCP_DB_PASSWORD }}
       TF_VAR_gcp_credentials: "${{ github.workspace }}/infra/terraform/gcp-creds.json"
       TF_VAR_gcp_ssh_public_key: ${{ secrets.SSH_GCP_KEY_PUB }}
@@ -28,10 +30,7 @@ jobs:
       TF_VAR_key_name: ${{ secrets.AWS_KEY_NAME }}
       TF_VAR_aws_region: ${{ secrets.AWS_REGION }}
 
-      # 💡 GCS Backend 인증용 핵심 환경 변수 (절대 경로)
       GOOGLE_APPLICATION_CREDENTIALS: "${{ github.workspace }}/infra/terraform/gcp-creds.json"
-
-      # Cloud Provider Credentials
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
@@ -43,6 +42,7 @@ jobs:
         uses: hashicorp/setup-terraform@v3
 
       - name: Prepare GCP Credentials
+        # 경로가 TF_VAR_gcp_credentials 및 GOOGLE_APPLICATION_CREDENTIALS와 일치하는지 확인
         run: echo '${{ secrets.GCP_CREDENTIALS }}' > infra/terraform/gcp-creds.json
 
       - name: Terraform Init
