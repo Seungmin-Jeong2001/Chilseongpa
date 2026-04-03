@@ -8,7 +8,7 @@ terraform {
 }
 
 # -------------------------------------------------------------------
-# 0. Tunnel 생성 및 비밀번호 관리
+# 0. Tunnel 생성 및 비밀번호 자동 관리
 # -------------------------------------------------------------------
 resource "random_password" "tunnel_secrets" {
   for_each = toset(["gcp", "aws", "monitoring"])
@@ -24,23 +24,37 @@ resource "cloudflare_zero_trust_tunnel_cloudflared" "tunnels" {
 }
 
 # -------------------------------------------------------------------
-# 1. Access 설정 (인증 및 토큰)
+# 1. Access 설정 (인증 및 Bypass 정책)
 # -------------------------------------------------------------------
 resource "cloudflare_zero_trust_access_service_token" "monitoring_token" {
   account_id = var.cf_account_id
   name       = "Chilseongpa-Monitoring-Token"
 }
 
-# [추가] AWS Node Exporter(9100) 수집을 위한 Zero Trust 보호
-resource "cloudflare_zero_trust_access_application" "aws_node" {
+# 일반 모니터링 앱 (Prometheus 스크래핑용)
+resource "cloudflare_zero_trust_access_application" "apps" {
+  for_each = toset([
+    "gcp-metrics", "gcp-app", "gcp-ksm",
+    "aws-node", "aws-app", "aws-ksm"
+  ])
   zone_id = var.cf_zone_id
-  name    = "AWS Node Exporter"
-  domain  = "aws-node.bucheongoyangijanggun.com"
+  name    = "Monitoring-${each.key}"
+  domain  = "${each.key}.bucheongoyangijanggun.com"
   type    = "self_hosted"
 }
 
-resource "cloudflare_zero_trust_access_policy" "aws_node_policy" {
-  application_id = cloudflare_zero_trust_access_application.aws_node.id
+# [핵심] AWS K8s API 전용 앱 (Bypass 대상)
+resource "cloudflare_zero_trust_access_application" "aws_k8s_api" {
+  zone_id = var.cf_zone_id
+  name    = "AWS-K8s-API-Access"
+  domain  = "aws-k8s.bucheongoyangijanggun.com"
+  type    = "self_hosted"
+}
+
+# 일반 앱용 정책: 서비스 토큰 인증
+resource "cloudflare_zero_trust_access_policy" "monitoring_policy" {
+  for_each       = cloudflare_zero_trust_access_application.apps
+  application_id = each.value.id
   zone_id        = var.cf_zone_id
   name           = "Allow Prometheus Scraper"
   decision       = "non_identity"
@@ -51,48 +65,21 @@ resource "cloudflare_zero_trust_access_policy" "aws_node_policy" {
   }
 }
 
-# [추가] AWS 앱 메트릭(30800) 수집을 위한 Zero Trust 보호
-resource "cloudflare_zero_trust_access_application" "aws_app" {
-  zone_id = var.cf_zone_id
-  name    = "AWS App Metrics"
-  domain  = "aws-app.bucheongoyangijanggun.com"
-  type    = "self_hosted"
-}
-
-resource "cloudflare_zero_trust_access_policy" "aws_app_policy" {
-  application_id = cloudflare_zero_trust_access_application.aws_app.id
+# [핵심] K8s API용 정책: Bypass (로그인 창 제거)
+resource "cloudflare_zero_trust_access_policy" "aws_k8s_bypass_policy" {
+  application_id = cloudflare_zero_trust_access_application.aws_k8s_api.id
   zone_id        = var.cf_zone_id
-  name           = "Allow Prometheus Scraper"
-  decision       = "non_identity"
+  name           = "Bypass for K8s API Auth"
+  decision       = "bypass"
   precedence     = 1
 
   include {
-    service_token = [cloudflare_zero_trust_access_service_token.monitoring_token.id]
-  }
-}
-
-# [추가] AWS kube-state-metrics(30080) 수집을 위한 Zero Trust 보호
-resource "cloudflare_zero_trust_access_application" "aws_ksm" {
-  zone_id = var.cf_zone_id
-  name    = "AWS kube-state-metrics"
-  domain  = "aws-ksm.bucheongoyangijanggun.com"
-  type    = "self_hosted"
-}
-
-resource "cloudflare_zero_trust_access_policy" "aws_ksm_policy" {
-  application_id = cloudflare_zero_trust_access_application.aws_ksm.id
-  zone_id        = var.cf_zone_id
-  name           = "Allow Prometheus Scraper"
-  decision       = "non_identity"
-  precedence     = 1
-
-  include {
-    service_token = [cloudflare_zero_trust_access_service_token.monitoring_token.id]
+    everyone = true
   }
 }
 
 # -------------------------------------------------------------------
-# 2. Tunnel Config 설정 (멀티 서비스 매핑)
+# 2. Tunnel Config (인증서 무시 옵션 포함)
 # -------------------------------------------------------------------
 resource "cloudflare_zero_trust_tunnel_cloudflared_config" "configs" {
   for_each   = cloudflare_zero_trust_tunnel_cloudflared.tunnels
@@ -100,24 +87,46 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "configs" {
   tunnel_id  = each.value.id
 
   config {
-    # [A] Monitoring 터널 전용 규칙 (Grafana & Prometheus)
+    # Monitoring 터널 (Grafana/Prometheus)
     dynamic "ingress_rule" {
       for_each = each.key == "monitoring" ? [1] : []
       content {
-        hostname = var.grafana_domain # monitoring.bucheong...
-        service  = "http://localhost:3000" # Grafana 접속
+        hostname = var.grafana_domain
+        service  = "http://localhost:3000"
       }
     }
-
     dynamic "ingress_rule" {
       for_each = each.key == "monitoring" ? [1] : []
       content {
         hostname = var.prometheus_domain
-        service  = "http://localhost:9090" # Prometheus 접속
+        service  = "http://localhost:9090"
       }
     }
 
-    # [E] AWS 터널 전용 규칙 (Node Exporter / App Metrics / kube-state-metrics)
+    # GCP 터널
+    dynamic "ingress_rule" {
+      for_each = each.key == "gcp" ? [1] : []
+      content {
+        hostname = "gcp-metrics.bucheongoyangijanggun.com"
+        service  = "http://localhost:9100"
+      }
+    }
+    dynamic "ingress_rule" {
+      for_each = each.key == "gcp" ? [1] : []
+      content {
+        hostname = "gcp-app.bucheongoyangijanggun.com"
+        service  = "http://localhost:80"
+      }
+    }
+    dynamic "ingress_rule" {
+      for_each = each.key == "gcp" ? [1] : []
+      content {
+        hostname = "gcp-ksm.bucheongoyangijanggun.com"
+        service  = "http://localhost:80"
+      }
+    }
+
+    # AWS 터널 (K3s API 502 에러 해결 포인트)
     dynamic "ingress_rule" {
       for_each = each.key == "aws" ? [1] : []
       content {
@@ -125,7 +134,6 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "configs" {
         service  = "http://localhost:9100"
       }
     }
-
     dynamic "ingress_rule" {
       for_each = each.key == "aws" ? [1] : []
       content {
@@ -133,22 +141,31 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "configs" {
         service  = "http://localhost:30800"
       }
     }
-
     dynamic "ingress_rule" {
       for_each = each.key == "aws" ? [1] : []
       content {
         hostname = "aws-ksm.bucheongoyangijanggun.com"
-        service  = "http://localhost:30080"
+        service  = "http://localhost:30080" 
+      }
+    }
+    dynamic "ingress_rule" {
+      for_each = each.key == "aws" ? [1] : []
+      content {
+        hostname = "aws-k8s.bucheongoyangijanggun.com"
+        service  = "https://localhost:6443"
+        # 💡 K3s 자체 서명 인증서 무시 설정
+        origin_request {
+          no_tls_verify = true
+        }
       }
     }
 
-    # [C] 기본 공통 규칙 (App 배포용)
+    # 공통 앱 배포 규칙 (Load Balancer를 위해 모든 터널이 응답 대기)
     ingress_rule {
-      hostname = var.app_domain # app.bucheong...
+      hostname = var.app_domain
       service  = "http://localhost:80"
     }
 
-    # [D] Catch-all 규칙 (필수)
     ingress_rule {
       service = "http_status:404"
     }
@@ -156,65 +173,37 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "configs" {
 }
 
 # -------------------------------------------------------------------
-# 3. DNS 레코드 설정 (도메인 - 터널 연결)
+# 3. DNS 레코드 설정
 # -------------------------------------------------------------------
-# Grafana 도메인
-resource "cloudflare_record" "monitoring_record" {
+resource "cloudflare_record" "records" {
+  for_each = {
+    grafana     = { name = "grafana", tunnel = "monitoring" }
+    prometheus  = { name = "prometheus", tunnel = "monitoring" }
+    gcp-metrics = { name = "gcp-metrics", tunnel = "gcp" }
+    gcp-app      = { name = "gcp-app", tunnel = "gcp" }
+    gcp-ksm      = { name = "gcp-ksm", tunnel = "gcp" }
+    aws-node     = { name = "aws-node", tunnel = "aws" }
+    aws-app      = { name = "aws-app", tunnel = "aws" }
+    aws-ksm      = { name = "aws-ksm", tunnel = "aws" }
+    aws-k8s      = { name = "aws-k8s", tunnel = "aws" }
+  }
   zone_id = var.cf_zone_id
-  name    = "grafana"
-  content = "${cloudflare_zero_trust_tunnel_cloudflared.tunnels["monitoring"].id}.cfargotunnel.com"
-  type    = "CNAME"
-  proxied = true
-}
-
-# Prometheus 도메인
-resource "cloudflare_record" "prometheus_record" {
-  zone_id = var.cf_zone_id
-  name    = "prometheus"
-  content = "${cloudflare_zero_trust_tunnel_cloudflared.tunnels["monitoring"].id}.cfargotunnel.com"
-  type    = "CNAME"
-  proxied = true
-}
-
-# [추가] AWS Node Exporter 도메인
-resource "cloudflare_record" "aws_node_record" {
-  zone_id = var.cf_zone_id
-  name    = "aws-node"
-  content = "${cloudflare_zero_trust_tunnel_cloudflared.tunnels["aws"].id}.cfargotunnel.com"
-  type    = "CNAME"
-  proxied = true
-}
-
-# [추가] AWS App 메트릭 도메인
-resource "cloudflare_record" "aws_app_record" {
-  zone_id = var.cf_zone_id
-  name    = "aws-app"
-  content = "${cloudflare_zero_trust_tunnel_cloudflared.tunnels["aws"].id}.cfargotunnel.com"
-  type    = "CNAME"
-  proxied = true
-}
-
-# [추가] AWS kube-state-metrics 도메인
-resource "cloudflare_record" "aws_ksm_record" {
-  zone_id = var.cf_zone_id
-  name    = "aws-ksm"
-  content = "${cloudflare_zero_trust_tunnel_cloudflared.tunnels["aws"].id}.cfargotunnel.com"
+  name    = each.value.name
+  content = "${cloudflare_zero_trust_tunnel_cloudflared.tunnels[each.value.tunnel].id}.cfargotunnel.com"
   type    = "CNAME"
   proxied = true
 }
 
 # -------------------------------------------------------------------
-# 4. Load Balancer 설정
+# 4. Load Balancer 설정 (GCP/AWS 하이브리드 구성)
 # -------------------------------------------------------------------
 resource "cloudflare_load_balancer_monitor" "monitor" {
   account_id     = var.cf_account_id
   type           = "http"
-  path           = "/"
+  path           = "/health"
   port           = 80
   interval       = 60
-  retries        = 2
   expected_codes = "200"
-
   header {
     header = "Host"
     values = [var.app_domain]
@@ -235,8 +224,7 @@ resource "cloudflare_load_balancer_pool" "pools" {
 
 resource "cloudflare_load_balancer" "lb" {
   zone_id = var.cf_zone_id
-  name    = var.app_domain
-  
+  name    = var.app_domain # app.bucheongoyangijanggun.com
   default_pool_ids = [
     cloudflare_load_balancer_pool.pools["gcp"].id,
     cloudflare_load_balancer_pool.pools["aws"].id

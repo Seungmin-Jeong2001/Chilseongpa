@@ -35,6 +35,7 @@ cf_client_secret=${cf_secret}
 aws_ip=${aws_ip}
 gcp_ip=${gcp_ip}
 gcp_internal_ip=${gcp_internal_ip}
+gcp_mon_ip=${gcp_mon_ip}
 app_domain=${app_domain}
 grafana_domain=${grafana_domain}
 prometheus_domain=${prometheus_domain}
