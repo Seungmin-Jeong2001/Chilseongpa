@@ -68,13 +68,14 @@ jobs:
         id: outputs
         working-directory: infra/terraform
         run: |
-          INV_DATA=$(terraform output -json ansible_inventory_data)
-          DB_KEY=$(terraform output -raw gcp_db_proxy_sa_key)
-          echo "gcp_k3s_ip=$(echo "$INV_DATA" | jq -r .gcp_ip)" >> $GITHUB_OUTPUT
-          echo "gcp_mon_ip=$(echo "$INV_DATA" | jq -r .gcp_mon_ip)" >> $GITHUB_OUTPUT
-          echo "inventory_data<<EOF" >> $GITHUB_OUTPUT
-          echo "$INV_DATA" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          terraform output -json > outputs.json
+          INV_DATA=$(jq -c '.ansible_inventory_data.value' outputs.json)
+          DB_KEY=$(jq -r '.gcp_db_proxy_sa_key.value' outputs.json)
+          
+          echo "inventory_data=$INV_DATA" >> $GITHUB_OUTPUT
+          echo "gcp_k3s_ip=$(echo "$INV_DATA" | jq -r '.gcp_ip // empty')" >> $GITHUB_OUTPUT
+          echo "gcp_mon_ip=$(echo "$INV_DATA" | jq -r '.gcp_mon_ip // empty')" >> $GITHUB_OUTPUT
+          
           echo "db_sa_key<<EOF" >> $GITHUB_OUTPUT
           echo "$DB_KEY" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -97,9 +98,12 @@ jobs:
           echo "${{ secrets.SSH_AWS_KEY }}" > ~/.ssh/id_aws
           chmod 600 ~/.ssh/id_gcp ~/.ssh/id_aws
           INV_JSON='${{ needs.terraform.outputs.inventory_data }}'
-          GCP_IP=$(echo "$INV_JSON" | jq -r .gcp_ip)
-          GCP_MON_IP=$(echo "$INV_JSON" | jq -r .gcp_mon_ip)
-          BASTION_IP=$(echo "$INV_JSON" | jq -r .bastion_ip)
+          [ -z "$INV_JSON" ] || [ "$INV_JSON" = "null" ] && echo "Inventory data is empty or null" && exit 1
+          
+          GCP_IP=$(echo "$INV_JSON" | jq -r '.gcp_ip // empty')
+          GCP_MON_IP=$(echo "$INV_JSON" | jq -r '.gcp_mon_ip // empty')
+          BASTION_IP=$(echo "$INV_JSON" | jq -r '.bastion_ip // empty')
+          
           [ -n "$GCP_IP" ] && ssh-keyscan -H $GCP_IP >> ~/.ssh/known_hosts
           [ -n "$GCP_MON_IP" ] && ssh-keyscan -H $GCP_MON_IP >> ~/.ssh/known_hosts
           [ -n "$BASTION_IP" ] && ssh-keyscan -H $BASTION_IP >> ~/.ssh/known_hosts
@@ -108,21 +112,21 @@ jobs:
         working-directory: infra/ansible
         run: |
           INV_JSON='${{ needs.terraform.outputs.inventory_data }}'
-          GCP_IP=$(echo $INV_JSON | jq -r .gcp_ip)
-          GCP_MON_IP=$(echo $INV_JSON | jq -r .gcp_mon_ip)
-          BASTION_IP=$(echo $INV_JSON | jq -r .bastion_ip)
-          AWS_IP=$(echo $INV_JSON | jq -r .aws_ip)
+          GCP_IP=$(echo "$INV_JSON" | jq -r '.gcp_ip // empty')
+          GCP_MON_IP=$(echo "$INV_JSON" | jq -r '.gcp_mon_ip // empty')
+          BASTION_IP=$(echo "$INV_JSON" | jq -r '.bastion_ip // empty')
+          AWS_IP=$(echo "$INV_JSON" | jq -r '.aws_ip // empty')
+          
           cat <<EOF > inventory.ini
           [gcp_primary]
-          gcp-main ansible_host=$GCP_IP tunnel_token=$(echo "$INV_JSON" | jq -r .gcp_token) db_conn=$(echo "$INV_JSON" | jq -r .db_connection)
+          gcp-main ansible_host=$GCP_IP tunnel_token=$(echo "$INV_JSON" | jq -r '.gcp_token // empty') db_conn=$(echo "$INV_JSON" | jq -r '.db_connection // empty')
           [gcp_monitoring]
-          gcp-monitor ansible_host=$GCP_MON_IP tunnel_token=$(echo "$INV_JSON" | jq -r .mon_token)
+          gcp-monitor ansible_host=$GCP_MON_IP tunnel_token=$(echo "$INV_JSON" | jq -r '.mon_token // empty')
           [aws_bastion]
           aws-bastion ansible_host=$BASTION_IP
           [aws_nodes]
-          aws-sub ansible_host=$AWS_IP tunnel_token=$(echo "$INV_JSON" | jq -r .aws_token)
+          aws-sub ansible_host=$AWS_IP tunnel_token=$(echo "$INV_JSON" | jq -r '.aws_token // empty')
 
-          # 💡 [변경됨] 각 그룹이 자기에게 맞는 키를 쓰도록 설정
           [gcp_primary:vars]
           ansible_ssh_private_key_file=~/.ssh/id_gcp
           [gcp_monitoring:vars]
@@ -133,12 +137,12 @@ jobs:
 
           [all:vars]
           ansible_user=ubuntu
-          gcp_project_id=$(echo "$INV_JSON" | jq -r .gcp_project_id)
-          cf_client_id=$(echo "$INV_JSON" | jq -r .cf_id)
-          cf_client_secret=$(echo "$INV_JSON" | jq -r .cf_secret)
-          app_domain=$(echo "$INV_JSON" | jq -r .app_domain)
-          grafana_domain=$(echo "$INV_JSON" | jq -r .grafana_domain)
-          prometheus_domain=$(echo "$INV_JSON" | jq -r .prometheus_domain)
+          gcp_project_id=$(echo "$INV_JSON" | jq -r '.gcp_project_id // empty')
+          cf_client_id=$(echo "$INV_JSON" | jq -r '.cf_id // empty')
+          cf_client_secret=$(echo "$INV_JSON" | jq -r '.cf_secret // empty')
+          app_domain=$(echo "$INV_JSON" | jq -r '.app_domain // empty')
+          grafana_domain=$(echo "$INV_JSON" | jq -r '.grafana_domain // empty')
+          prometheus_domain=$(echo "$INV_JSON" | jq -r '.prometheus_domain // empty')
           EOF
 
       - name: Install Ansible and Dependencies
