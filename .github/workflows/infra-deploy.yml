@@ -68,17 +68,31 @@ jobs:
         id: outputs
         working-directory: infra/terraform
         run: |
+          # 1. JSON 파일로 전체 출력 저장
           terraform output -json > outputs.json
+          
+          # 2. 데이터 유무 확인 (디버깅용)
+          if ! jq -e '.ansible_inventory_data' outputs.json > /dev/null; then
+            echo "Error: ansible_inventory_data not found in terraform outputs"
+            exit 1
+          fi
+
+          # 3. 각 값을 변수에 할당
           INV_DATA=$(jq -c '.ansible_inventory_data.value' outputs.json)
           DB_KEY=$(jq -r '.gcp_db_proxy_sa_key.value' outputs.json)
-          
-          echo "inventory_data=$INV_DATA" >> $GITHUB_OUTPUT
-          echo "gcp_k3s_ip=$(echo "$INV_DATA" | jq -r '.gcp_ip // empty')" >> $GITHUB_OUTPUT
-          echo "gcp_mon_ip=$(echo "$INV_DATA" | jq -r '.gcp_mon_ip // empty')" >> $GITHUB_OUTPUT
-          
+
+          # 4. Heredoc을 사용하여 GITHUB_OUTPUT에 안전하게 기록
+          echo "inventory_data<<EOF" >> $GITHUB_OUTPUT
+          echo "$INV_DATA" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
           echo "db_sa_key<<EOF" >> $GITHUB_OUTPUT
           echo "$DB_KEY" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
+
+          # 5. Job Output 매핑을 위한 개별 IP 추출
+          echo "gcp_k3s_ip=$(echo "$INV_DATA" | jq -r '.gcp_ip // empty')" >> $GITHUB_OUTPUT
+          echo "gcp_mon_ip=$(echo "$INV_DATA" | jq -r '.gcp_mon_ip // empty')" >> $GITHUB_OUTPUT
 
   ansible:
     name: Deployment (Ansible)
