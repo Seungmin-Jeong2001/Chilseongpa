@@ -15,6 +15,7 @@ jobs:
     name: Infrastructure (Terraform)
     runs-on: ubuntu-latest
     outputs:
+      # Job 간 데이터 전달을 위한 Output 정의
       inventory_data: ${{ steps.outputs.outputs.inventory_data }}
       db_sa_key: ${{ steps.outputs.outputs.db_sa_key }}
       gcp_k3s_ip: ${{ steps.outputs.outputs.gcp_k3s_ip }}
@@ -33,7 +34,6 @@ jobs:
       TF_VAR_cf_tunnel_secret: ${{ secrets.CF_TUNNEL_SECRET }}
       TF_VAR_key_name: ${{ secrets.AWS_KEY_NAME }}
       TF_VAR_aws_region: ${{ secrets.AWS_REGION }}
-      
       GOOGLE_APPLICATION_CREDENTIALS: "${{ github.workspace }}/infra/terraform/gcp-creds.json"
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -45,7 +45,8 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_wrapper: false # 💡 중요: 보안 필터에 의한 Output 누락(Skip output) 문제를 해결합니다.
+          # 💡 핵심 수정: wrapper를 false로 설정해야 'Skip output' 현상이 사라집니다.
+          terraform_wrapper: false 
 
       - name: Prepare GCP Credentials
         run: echo '${{ secrets.GCP_CREDENTIALS }}' > infra/terraform/gcp-creds.json
@@ -66,15 +67,15 @@ jobs:
         id: outputs
         working-directory: infra/terraform
         run: |
-          # 1. 데이터를 변수에 담기 (wrapper: false 설정으로 직접 추출 가능)
+          # 💡 wrapper: false 설정 덕분에 terraform output을 직접 변수에 담을 수 있습니다.
           INV_DATA=$(terraform output -json ansible_inventory_data)
           DB_KEY=$(terraform output -raw gcp_db_proxy_sa_key)
           
-          # 2. IP 추출 및 GITHUB_OUTPUT 저장
+          # IP 추출
           echo "gcp_k3s_ip=$(echo "$INV_DATA" | jq -r .gcp_ip)" >> $GITHUB_OUTPUT
           echo "gcp_mon_ip=$(echo "$INV_DATA" | jq -r .gcp_mon_ip)" >> $GITHUB_OUTPUT
           
-          # 3. JSON 및 시크릿 데이터를 EOF 방식으로 안전하게 출력
+          # 시크릿 데이터 전달을 위한 멀티라인 출력 방식 적용
           echo "inventory_data<<EOF" >> $GITHUB_OUTPUT
           echo "$INV_DATA" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -89,6 +90,7 @@ jobs:
     runs-on: ubuntu-latest
     
     env:
+      # Vault 비밀번호 파일 경로 전역 설정
       ANSIBLE_VAULT_PASSWORD_FILE: ${{ github.workspace }}/infra/ansible/.vault_pass
 
     steps:
@@ -102,6 +104,7 @@ jobs:
           echo "${{ secrets.SSH_AWS_KEY }}" > ~/.ssh/id_aws
           chmod 600 ~/.ssh/id_gcp ~/.ssh/id_aws
           
+          # Terraform에서 넘겨받은 IP로 SSH Scan
           INV_JSON='${{ needs.terraform.outputs.inventory_data }}'
           GCP_IP=$(echo "$INV_JSON" | jq -r .gcp_ip)
           GCP_MON_IP=$(echo "$INV_JSON" | jq -r .gcp_mon_ip)
@@ -133,7 +136,7 @@ jobs:
           [aws_nodes]
           aws-sub ansible_host=$AWS_IP tunnel_token=$(echo "$INV_JSON" | jq -r .aws_token)
 
-          # 💡 그룹별로 각자의 SSH 키를 사용하도록 설정 (상대 경로 제거)
+          # 💡 중요: AWS와 GCP에 각각 맞는 키를 사용하도록 설정
           [gcp_primary:vars]
           ansible_ssh_private_key_file=~/.ssh/id_gcp
 
@@ -173,6 +176,8 @@ jobs:
       - name: Run Ansible Playbook
         working-directory: infra/ansible
         run: |
+          # 💡 특정 키를 강제하던 --extra-vars "ansible_ssh_private_key_file=..."를 제거했습니다.
+          # 이제 인벤토리에 지정된 키를 자동으로 사용하므로 AWS 접속 실패가 해결됩니다.
           ansible-playbook -i inventory.ini playbook.yml \
             --extra-vars "gcp_db_sa_content='${{ needs.terraform.outputs.db_sa_key }}'" \
             --extra-vars "project_name=${{ secrets.PROJECT_NAME }}" \
