@@ -8,7 +8,7 @@ on:
       - 'infra/**'
       - 'application/**'
       - '.github/workflows/infra-deploy.yml'
-  workflow_dispatch: # 수동 실행 허용
+  workflow_dispatch: 
 
 jobs:
   terraform:
@@ -33,10 +33,7 @@ jobs:
       TF_VAR_cf_tunnel_secret: ${{ secrets.CF_TUNNEL_SECRET }}
       TF_VAR_key_name: ${{ secrets.AWS_KEY_NAME }}
       TF_VAR_aws_region: ${{ secrets.AWS_REGION }}
-      
-      # 💡 GCS Backend 인증용 핵심 환경 변수
       GOOGLE_APPLICATION_CREDENTIALS: "${{ github.workspace }}/infra/terraform/gcp-creds.json"
-      
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
@@ -66,21 +63,15 @@ jobs:
         id: outputs
         working-directory: infra/terraform
         run: |
-          # 1. 데이터를 변수에 담기
           INV_DATA=$(terraform output -json ansible_inventory_data)
           DB_KEY=$(terraform output -raw gcp_db_proxy_sa_key)
-          
-          # 2. IP 추출 (단순 문자열)
           GCP_IP=$(echo "$INV_DATA" | jq -r .gcp_ip)
           GCP_MON_IP=$(echo "$INV_DATA" | jq -r .gcp_mon_ip)
           echo "gcp_k3s_ip=$GCP_IP" >> $GITHUB_OUTPUT
           echo "gcp_mon_ip=$GCP_MON_IP" >> $GITHUB_OUTPUT
-          
-          # 3. 긴 JSON 및 시크릿 데이터를 EOF 방식을 사용하여 안전하게 출력
           echo "inventory_data<<EOF" >> $GITHUB_OUTPUT
           echo "$INV_DATA" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-          
           echo "db_sa_key<<EOF" >> $GITHUB_OUTPUT
           echo "$DB_KEY" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -90,9 +81,10 @@ jobs:
     needs: terraform
     runs-on: ubuntu-latest
     
+    # 💡 조언 적용: 전역 환경 변수로 Vault 비밀번호 파일 위치 지정
     env:
       ANSIBLE_VAULT_PASSWORD_FILE: ${{ github.workspace }}/infra/ansible/.vault_pass
-    
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -104,11 +96,10 @@ jobs:
           echo "${{ secrets.SSH_AWS_KEY }}" > ~/.ssh/id_aws
           chmod 600 ~/.ssh/id_gcp ~/.ssh/id_aws
           
-          # Scan GCP and AWS Bastion IPs
           INV_JSON='${{ needs.terraform.outputs.inventory_data }}'
-          GCP_IP=$(echo $INV_JSON | jq -r .gcp_ip)
-          GCP_MON_IP=$(echo $INV_JSON | jq -r .gcp_mon_ip)
-          BASTION_IP=$(echo $INV_JSON | jq -r .bastion_ip)
+          GCP_IP=$(echo "$INV_JSON" | jq -r .gcp_ip)
+          GCP_MON_IP=$(echo "$INV_JSON" | jq -r .gcp_mon_ip)
+          BASTION_IP=$(echo "$INV_JSON" | jq -r .bastion_ip)
           
           ssh-keyscan -H $GCP_IP >> ~/.ssh/known_hosts
           ssh-keyscan -H $GCP_MON_IP >> ~/.ssh/known_hosts
@@ -118,24 +109,25 @@ jobs:
         working-directory: infra/ansible
         run: |
           INV_JSON='${{ needs.terraform.outputs.inventory_data }}'
-          GCP_IP=$(echo $INV_JSON | jq -r .gcp_ip)
-          GCP_MON_IP=$(echo $INV_JSON | jq -r .gcp_mon_ip)
-          BASTION_IP=$(echo $INV_JSON | jq -r .bastion_ip)
-          AWS_IP=$(echo $INV_JSON | jq -r .aws_ip)
+          GCP_IP=$(echo "$INV_JSON" | jq -r .gcp_ip)
+          GCP_MON_IP=$(echo "$INV_JSON" | jq -r .gcp_mon_ip)
+          BASTION_IP=$(echo "$INV_JSON" | jq -r .bastion_ip)
+          AWS_IP=$(echo "$INV_JSON" | jq -r .aws_ip)
           
           cat <<EOF > inventory.ini
           [gcp_primary]
-          gcp-main ansible_host=$GCP_IP tunnel_token=$(echo $INV_JSON | jq -r .gcp_token) db_conn=$(echo $INV_JSON | jq -r .db_connection)
+          gcp-main ansible_host=$GCP_IP tunnel_token=$(echo "$INV_JSON" | jq -r .gcp_token) db_conn=$(echo "$INV_JSON" | jq -r .db_connection)
 
           [gcp_monitoring]
-          gcp-monitor ansible_host=$GCP_MON_IP tunnel_token=$(echo $INV_JSON | jq -r .mon_token)
+          gcp-monitor ansible_host=$GCP_MON_IP tunnel_token=$(echo "$INV_JSON" | jq -r .mon_token)
 
           [aws_bastion]
           aws-bastion ansible_host=$BASTION_IP
 
           [aws_nodes]
-          aws-sub ansible_host=$AWS_IP tunnel_token=$(echo $INV_JSON | jq -r .aws_token)
+          aws-sub ansible_host=$AWS_IP tunnel_token=$(echo "$INV_JSON" | jq -r .aws_token)
 
+          # 💡 AWS와 GCP에 각각 맞는 키를 사용하도록 그룹별 변수 설정
           [gcp_primary:vars]
           ansible_ssh_private_key_file=~/.ssh/id_gcp
 
@@ -151,19 +143,21 @@ jobs:
 
           [all:vars]
           ansible_user=ubuntu
-          gcp_project_id=$(echo $INV_JSON | jq -r .gcp_project_id)
-          cf_client_id=$(echo $INV_JSON | jq -r .cf_id)
-          cf_client_secret=$(echo $INV_JSON | jq -r .cf_secret)
-          app_domain=$(echo $INV_JSON | jq -r .app_domain)
-          grafana_domain=$(echo $INV_JSON | jq -r .grafana_domain)
-          prometheus_domain=$(echo $INV_JSON | jq -r .prometheus_domain)
+          gcp_project_id=$(echo "$INV_JSON" | jq -r .gcp_project_id)
+          cf_client_id=$(echo "$INV_JSON" | jq -r .cf_id)
+          cf_client_secret=$(echo "$INV_JSON" | jq -r .cf_secret)
+          app_domain=$(echo "$INV_JSON" | jq -r .app_domain)
+          grafana_domain=$(echo "$INV_JSON" | jq -r .grafana_domain)
+          prometheus_domain=$(echo "$INV_JSON" | jq -r .prometheus_domain)
           EOF
 
       - name: Install Ansible and Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y ansible
-          ansible-galaxy collection install -r infra/ansible/requirements.yml
+          if [ -f infra/ansible/requirements.yml ]; then
+            ansible-galaxy collection install -r infra/ansible/requirements.yml
+          fi
 
       - name: Create Vault Password File
         run: |
@@ -173,6 +167,8 @@ jobs:
       - name: Run Ansible Playbook
         working-directory: infra/ansible
         run: |
+          # 💡 --extra-vars "ansible_ssh_private_key_file=..."를 제거했습니다.
+          # 이제 인벤토리 설정에 따라 AWS는 id_aws를, GCP는 id_gcp를 자동으로 사용합니다.
           ansible-playbook -i inventory.ini playbook.yml \
             --extra-vars "gcp_db_sa_content='${{ needs.terraform.outputs.db_sa_key }}'" \
             --extra-vars "project_name=${{ secrets.PROJECT_NAME }}" \
