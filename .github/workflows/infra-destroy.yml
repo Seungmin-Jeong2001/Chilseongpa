@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: '실행하려면 "destroy"를 입력하세요'
+        description: "Input \"destroy\"를 입력하세요"
         required: true
-        default: 'none'
+        default: 'none' 
 
 jobs:
   terraform-destroy:
