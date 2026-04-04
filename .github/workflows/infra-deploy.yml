@@ -17,6 +17,7 @@ jobs:
   terraform:
     name: Infrastructure (Terraform)
     runs-on: ubuntu-latest
+
     # ⭐ 오류의 원흉이었던 outputs 블록을 완전히 삭제했습니다 (파일로 전달하기 위함)
 
     env:
