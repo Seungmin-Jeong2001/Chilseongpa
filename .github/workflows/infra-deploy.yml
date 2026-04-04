@@ -18,8 +18,6 @@ jobs:
     name: Infrastructure (Terraform)
     runs-on: ubuntu-latest
 
-    # ⭐ 오류의 원흉이었던 outputs 블록을 완전히 삭제했습니다 (파일로 전달하기 위함)
-
     env:
       TF_VAR_project_name: ${{ secrets.PROJECT_NAME }}
       TF_VAR_environment: ${{ secrets.ENVIRONMENT }}
@@ -61,21 +59,19 @@ jobs:
         working-directory: infra/terraform
         run: terraform apply -auto-approve -no-color
 
-      # ⭐ [핵심 1] 변수 전달 대신, 데이터를 로컬 파일로 안전하게 저장합니다.
-      - name: Export Outputs to Files
+      - name: Export Outputs for Ansible
         working-directory: infra/terraform
         run: |
           mkdir -p ${{ github.workspace }}/shared-data
           terraform output -json ansible_inventory_data > ${{ github.workspace }}/shared-data/inventory_data.json
           terraform output -raw gcp_db_proxy_sa_key > ${{ github.workspace }}/shared-data/db_sa_key.txt
 
-      # ⭐ [핵심 2] 저장된 파일을 Artifact로 업로드하여 보안 필터링을 우회합니다.
       - name: Upload Ansible Data Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ansible-data
           path: ${{ github.workspace }}/shared-data/
-          retention-days: 1 # 보안을 위해 하루 뒤 자동 삭제
+          retention-days: 1
 
   ansible:
     name: Deployment (Ansible)
@@ -88,7 +84,6 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # ⭐ [핵심 3] 업로드된 Artifact 파일을 다운로드 받습니다.
       - name: Download Ansible Data Artifact
         uses: actions/download-artifact@v4
         with:
@@ -102,7 +97,6 @@ jobs:
           echo "${{ secrets.SSH_AWS_KEY }}" > ~/.ssh/id_aws
           chmod 600 ~/.ssh/id_gcp ~/.ssh/id_aws
           
-          # 파일에서 값을 안전하게 읽어옵니다. (null 에러 완벽 차단)
           INV_JSON=$(cat ${{ github.workspace }}/shared-data/inventory_data.json)
           
           if [ -z "$INV_JSON" ] || [ "$INV_JSON" == "null" ]; then
@@ -175,7 +169,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ansible
-          # ⭐ 요청하신 requirements.yml 강제 설치 명령어를 명확하게 추가했습니다.
           ansible-galaxy collection install -r infra/ansible/requirements.yml
 
       - name: Create Vault Password File
@@ -186,11 +179,9 @@ jobs:
       - name: Run Ansible Playbook
         working-directory: infra/ansible
         run: |
-          # 파일에서 DB 키를 읽어옵니다.
-          DB_KEY_CONTENT=$(cat ${{ github.workspace }}/shared-data/db_sa_key.txt)
-          
+          # ⭐ [수정 핵심] DB 키의 '내용' 대신 '파일 경로'를 전달합니다.
           ansible-playbook -i inventory.ini playbook.yml \
-            --extra-vars "gcp_db_sa_content='$DB_KEY_CONTENT'" \
+            --extra-vars "gcp_db_sa_path=${{ github.workspace }}/shared-data/db_sa_key.txt" \
             --extra-vars "project_name=${{ secrets.PROJECT_NAME }}" \
             --extra-vars "environment=${{ secrets.ENVIRONMENT }}" \
             --extra-vars "dockerhub_username=${{ secrets.DOCKERHUB_USERNAME }}" \
