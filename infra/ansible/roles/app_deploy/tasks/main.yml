@@ -8,6 +8,15 @@
     kind: Namespace
     state: present
 
+# [추가] 고립된 서비스가 있을 경우 삭제하여 NodePort 충돌 방지
+- name: Remove orphaned backend-svc if exists
+  kubernetes.core.k8s:
+    name: backend-svc
+    namespace: ktcloud7
+    kind: Service
+    state: absent
+  ignore_errors: yes
+
 # 2. cloud sql DB에 필요한 정보를 k8s db로 secret 생성
 - name: Create Cloud SQL DB credentials secret
   kubernetes.core.k8s:
