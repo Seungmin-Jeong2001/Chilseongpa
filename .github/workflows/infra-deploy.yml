@@ -18,10 +18,9 @@ jobs:
     name: Infrastructure (Terraform)
     runs-on: ubuntu-latest
     outputs:
-      inventory_data: ${{ steps.outputs.outputs.inventory_data }}
-      db_sa_key: ${{ steps.outputs.outputs.db_sa_key }}
-      gcp_k3s_ip: ${{ steps.outputs.outputs.gcp_k3s_ip }}
-      gcp_mon_ip: ${{ steps.outputs.outputs.gcp_mon_ip }}
+      # ⭐ [핵심 1] 원본 대신 Base64로 인코딩된 데이터를 전달합니다.
+      inventory_data_b64: ${{ steps.outputs.outputs.inventory_data_b64 }}
+      db_sa_key_b64: ${{ steps.outputs.outputs.db_sa_key_b64 }}
 
     env:
       TF_VAR_project_name: ${{ secrets.PROJECT_NAME }}
@@ -47,7 +46,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_wrapper: false # 💡 [변경됨] JSON 출력값이 null이 되는 것을 방지
+          terraform_wrapper: false 
 
       - name: Prepare GCP Credentials
         run: echo '${{ secrets.GCP_CREDENTIALS }}' > infra/terraform/gcp-creds.json
@@ -68,38 +67,22 @@ jobs:
         id: outputs
         working-directory: infra/terraform
         run: |
-          # 1. JSON 파일로 전체 출력 저장
-          terraform output -json > outputs.json
+          INV_DATA=$(terraform output -json ansible_inventory_data)
+          DB_KEY=$(terraform output -raw gcp_db_proxy_sa_key)
           
-          # 2. 데이터 유무 확인 (디버깅용)
-          if ! jq -e '.ansible_inventory_data' outputs.json > /dev/null; then
-            echo "Error: ansible_inventory_data not found in terraform outputs"
-            exit 1
-          fi
-
-          # 3. 각 값을 변수에 할당
-          INV_DATA=$(jq -c '.ansible_inventory_data.value' outputs.json)
-          DB_KEY=$(jq -r '.gcp_db_proxy_sa_key.value' outputs.json)
-
-          # 4. Heredoc을 사용하여 GITHUB_OUTPUT에 안전하게 기록
-          echo "inventory_data<<EOF" >> $GITHUB_OUTPUT
-          echo "$INV_DATA" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-          echo "db_sa_key<<EOF" >> $GITHUB_OUTPUT
-          echo "$DB_KEY" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-          # 5. Job Output 매핑을 위한 개별 IP 추출
-          echo "gcp_k3s_ip=$(echo "$INV_DATA" | jq -r '.gcp_ip // empty')" >> $GITHUB_OUTPUT
-          echo "gcp_mon_ip=$(echo "$INV_DATA" | jq -r '.gcp_mon_ip // empty')" >> $GITHUB_OUTPUT
+          # ⭐ [핵심 2] GHA의 시크릿 삭제 로직을 피하기 위해 Base64로 묶어버립니다.
+          INV_B64=$(echo "$INV_DATA" | base64 -w 0)
+          DB_KEY_B64=$(echo "$DB_KEY" | base64 -w 0)
+          
+          echo "inventory_data_b64=$INV_B64" >> $GITHUB_OUTPUT
+          echo "db_sa_key_b64=$DB_KEY_B64" >> $GITHUB_OUTPUT
 
   ansible:
     name: Deployment (Ansible)
     needs: terraform
     runs-on: ubuntu-latest
     env:
-      ANSIBLE_VAULT_PASSWORD_FILE: ${{ github.workspace }}/infra/ansible/.vault_pass # 💡 [변경됨] Vault 설정 통합
+      ANSIBLE_VAULT_PASSWORD_FILE: ${{ github.workspace }}/infra/ansible/.vault_pass
     
     steps:
       - name: Checkout Code
@@ -111,9 +94,15 @@ jobs:
           echo "${{ secrets.SSH_GCP_KEY }}" > ~/.ssh/id_gcp
           echo "${{ secrets.SSH_AWS_KEY }}" > ~/.ssh/id_aws
           chmod 600 ~/.ssh/id_gcp ~/.ssh/id_aws
-          INV_JSON='${{ needs.terraform.outputs.inventory_data }}'
-          [ -z "$INV_JSON" ] || [ "$INV_JSON" = "null" ] && echo "Inventory data is empty or null" && exit 1
           
+          # ⭐ [핵심 3] 넘어온 Base64 데이터를 다시 디코딩하여 사용합니다.
+          INV_JSON=$(echo "${{ needs.terraform.outputs.inventory_data_b64 }}" | base64 -d)
+          
+          if [ -z "$INV_JSON" ] || [ "$INV_JSON" == "null" ]; then
+            echo "Error: Inventory data is empty."
+            exit 1
+          fi
+
           GCP_IP=$(echo "$INV_JSON" | jq -r '.gcp_ip // empty')
           GCP_MON_IP=$(echo "$INV_JSON" | jq -r '.gcp_mon_ip // empty')
           BASTION_IP=$(echo "$INV_JSON" | jq -r '.bastion_ip // empty')
@@ -125,38 +114,41 @@ jobs:
       - name: Prepare Inventory
         working-directory: infra/ansible
         run: |
-          INV_JSON='${{ needs.terraform.outputs.inventory_data }}'
-          GCP_IP=$(echo "$INV_JSON" | jq -r '.gcp_ip // empty')
-          GCP_MON_IP=$(echo "$INV_JSON" | jq -r '.gcp_mon_ip // empty')
-          BASTION_IP=$(echo "$INV_JSON" | jq -r '.bastion_ip // empty')
-          AWS_IP=$(echo "$INV_JSON" | jq -r '.aws_ip // empty')
+          INV_JSON=$(echo "${{ needs.terraform.outputs.inventory_data_b64 }}" | base64 -d)
+          
+          GCP_IP=$(echo "$INV_JSON" | jq -r .gcp_ip)
+          GCP_MON_IP=$(echo "$INV_JSON" | jq -r .gcp_mon_ip)
+          BASTION_IP=$(echo "$INV_JSON" | jq -r .bastion_ip)
+          AWS_IP=$(echo "$INV_JSON" | jq -r .aws_ip)
           
           cat <<EOF > inventory.ini
           [gcp_primary]
-          gcp-main ansible_host=$GCP_IP tunnel_token=$(echo "$INV_JSON" | jq -r '.gcp_token // empty') db_conn=$(echo "$INV_JSON" | jq -r '.db_connection // empty')
+          gcp-main ansible_host=$GCP_IP tunnel_token=$(echo "$INV_JSON" | jq -r .gcp_token) db_conn=$(echo "$INV_JSON" | jq -r .db_connection)
           [gcp_monitoring]
-          gcp-monitor ansible_host=$GCP_MON_IP tunnel_token=$(echo "$INV_JSON" | jq -r '.mon_token // empty')
+          gcp-monitor ansible_host=$GCP_MON_IP tunnel_token=$(echo "$INV_JSON" | jq -r .mon_token)
           [aws_bastion]
           aws-bastion ansible_host=$BASTION_IP
           [aws_nodes]
-          aws-sub ansible_host=$AWS_IP tunnel_token=$(echo "$INV_JSON" | jq -r '.aws_token // empty')
+          aws-sub ansible_host=$AWS_IP tunnel_token=$(echo "$INV_JSON" | jq -r .aws_token)
 
           [gcp_primary:vars]
           ansible_ssh_private_key_file=~/.ssh/id_gcp
           [gcp_monitoring:vars]
           ansible_ssh_private_key_file=~/.ssh/id_gcp
+          [aws_bastion:vars]
+          ansible_ssh_private_key_file=~/.ssh/id_aws
           [aws_nodes:vars]
           ansible_ssh_private_key_file=~/.ssh/id_aws
           ansible_ssh_common_args='-o ProxyCommand="ssh -W %h:%p -q ubuntu@$BASTION_IP -i ~/.ssh/id_aws -o StrictHostKeyChecking=no"'
 
           [all:vars]
           ansible_user=ubuntu
-          gcp_project_id=$(echo "$INV_JSON" | jq -r '.gcp_project_id // empty')
-          cf_client_id=$(echo "$INV_JSON" | jq -r '.cf_id // empty')
-          cf_client_secret=$(echo "$INV_JSON" | jq -r '.cf_secret // empty')
-          app_domain=$(echo "$INV_JSON" | jq -r '.app_domain // empty')
-          grafana_domain=$(echo "$INV_JSON" | jq -r '.grafana_domain // empty')
-          prometheus_domain=$(echo "$INV_JSON" | jq -r '.prometheus_domain // empty')
+          gcp_project_id=$(echo "$INV_JSON" | jq -r .gcp_project_id)
+          cf_client_id=$(echo "$INV_JSON" | jq -r .cf_id)
+          cf_client_secret=$(echo "$INV_JSON" | jq -r .cf_secret)
+          app_domain=$(echo "$INV_JSON" | jq -r .app_domain)
+          grafana_domain=$(echo "$INV_JSON" | jq -r .grafana_domain)
+          prometheus_domain=$(echo "$INV_JSON" | jq -r .prometheus_domain)
           EOF
 
       - name: Install Ansible and Dependencies
@@ -173,9 +165,11 @@ jobs:
       - name: Run Ansible Playbook
         working-directory: infra/ansible
         run: |
-          # 💡 [변경됨] 특정 키 강제 옵션(--extra-vars "ansible_ssh_private_key_file=...") 제거
+          # ⭐ [핵심 4] 암호화된 DB 키도 디코딩하여 주입합니다.
+          DB_KEY_DECODED=$(echo "${{ needs.terraform.outputs.db_sa_key_b64 }}" | base64 -d)
+          
           ansible-playbook -i inventory.ini playbook.yml \
-            --extra-vars "gcp_db_sa_content='${{ needs.terraform.outputs.db_sa_key }}'" \
+            --extra-vars "gcp_db_sa_content='$DB_KEY_DECODED'" \
             --extra-vars "project_name=${{ secrets.PROJECT_NAME }}" \
             --extra-vars "environment=${{ secrets.ENVIRONMENT }}" \
             --extra-vars "dockerhub_username=${{ secrets.DOCKERHUB_USERNAME }}" \
