@@ -4,7 +4,7 @@ global:
   evaluation_interval: 15s
   external_labels:
     monitor: 'gcp-prometheus'
-    environment: 'prod'
+    environment: '{{ deploy_env }}'
 
 rule_files:
   - "/etc/prometheus/alert.rules.yml"
@@ -29,7 +29,7 @@ scrape_configs:
         labels:
           cluster: 'gcp'
           service: 'cloudsql'
-          environment: 'prod'
+          environment: '{{ deploy_env }}'
 
   # 💡 GCP Node Exporter - CPU/Memory (GCP 내부 직접 통신)
   - job_name: 'gcp-node-exporter'
@@ -37,7 +37,7 @@ scrape_configs:
       - targets: ['{{ gcp_internal_ip }}:9100']
         labels:
           cluster: 'gcp'
-          environment: 'prod'
+          environment: '{{ deploy_env }}'
 
   # 💡 GCP App 메트릭 - HTTP 요청수/응답시간 (GCP 내부 직접 통신)
   - job_name: 'gcp-app-metrics'
@@ -46,7 +46,7 @@ scrape_configs:
         labels:
           cluster: 'gcp'
           service: 'backend'
-          environment: 'prod'
+          environment: '{{ deploy_env }}'
     metric_relabel_configs:
       - source_labels: [__name__]
         regex: 'http_requests_total'
@@ -71,7 +71,7 @@ scrape_configs:
       - targets: ['{{ gcp_internal_ip }}:30080']
         labels:
           cluster: 'gcp'
-          environment: 'prod'
+          environment: '{{ deploy_env }}'
 
   # 💡 AWS App /metrics - CF Access 헤더로 HTTPS scrape
   # 모니터링이 GCP로 이전되면서 AWS VPC 직접 접근 불가 → CF Tunnel 경유
@@ -90,7 +90,7 @@ scrape_configs:
         labels:
           cluster: 'aws'
           service: 'backend'
-          environment: 'prod'
+          environment: '{{ deploy_env }}'
     metric_relabel_configs:
       - source_labels: [__name__]
         regex: 'http_requests_total'
@@ -127,7 +127,7 @@ scrape_configs:
       - targets: ['aws-node.bucheongoyangijanggun.com']
         labels:
           cluster: 'aws'
-          environment: 'prod'
+          environment: '{{ deploy_env }}'
 
   # [추가] AWS kube-state-metrics - CF Access 헤더로 HTTPS scrape
   - job_name: 'aws-kube-state-metrics'
@@ -144,4 +144,4 @@ scrape_configs:
       - targets: ['aws-ksm.bucheongoyangijanggun.com']
         labels:
           cluster: 'aws'
-          environment: 'prod'
+          environment: '{{ deploy_env }}'
