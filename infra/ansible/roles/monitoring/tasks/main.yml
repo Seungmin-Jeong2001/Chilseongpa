@@ -65,7 +65,7 @@
         - { path: "/var/lib/grafana", owner: "472", group: "472" }
   when: storage_setup_enabled | bool
 
-# 3. 설정 파일 렌더링 및 배포 (중요: .j2 파일들은 template 모듈 사용)
+# 3. 설정 파일 렌더링 및 배포
 - name: Ensure config directories exist
   ansible.builtin.file:
     path: "{{ item }}"
@@ -107,17 +107,25 @@
     - { name: "kubeconfig-aws-sub.yaml", content: "{{ hostvars['aws-sub']['generated_kubeconfig'] | default(kubeconfig_aws_content) | default('') }}" }
   when: item.content != ""
 
-- name: Create GCP DB SA Key file from variable
-  ansible.builtin.copy:
-    content: "{{ gcp_db_sa_content | default('') }}"
-    dest: "/home/ubuntu/gcp-sa-key.json"
-    mode: '0644'
-  when: gcp_db_sa_content | default('') != ""
+# 💡 [핵심 보완] 디렉토리로 오인된 경로 강제 삭제 후 파일 생성
+- name: Force remove gcp-sa-key path to prevent directory/file conflict
+  ansible.builtin.file:
+    path: "/home/ubuntu/gcp-sa-key.json"
+    state: absent
+  when: gcp_db_sa_path is defined
 
-# ---------------------------------------------------------
-# 4. [핵심] 이미지 사전 풀링 (Pre-pulling)
-# ---------------------------------------------------------
-- name: Pre-pull monitoring images sequentially (Connection Reset 방지)
+- name: Create GCP DB SA Key file from Artifact path
+  ansible.builtin.copy:
+    # GitHub Runner에 저장된 Artifact 파일 내용을 읽어서 복사 (JSON 깨짐 원천 차단)
+    content: "{{ lookup('file', gcp_db_sa_path) }}"
+    dest: "/home/ubuntu/gcp-sa-key.json"
+    owner: ubuntu
+    group: ubuntu
+    mode: '0644'
+  when: gcp_db_sa_path is defined
+
+# 4. 이미지 사전 풀링 (Pre-pulling)
+- name: Pre-pull monitoring images sequentially
   community.docker.docker_image:
     name: "{{ item }}"
     source: pull
@@ -137,10 +145,10 @@
   community.docker.docker_compose_v2:
     project_src: "{{ monitoring_base_dir }}"
     state: present
-    pull: missing # 💡 이미 위에서 풀링했으므로 없는 것만 체크
+    pull: missing
 
-# 6. Cloud SQL Auth Proxy 및 기타 체크 (생략 가능하나 로직 유지)
-- name: Cloud SQL Auth Proxy Setup
+# 6. 호스트용 Cloud SQL Auth Proxy 실행 (포트 충돌 방지: 3307 사용)
+- name: Cloud SQL Auth Proxy Setup (Host-level)
   block:
     - name: Download Proxy
       ansible.builtin.get_url:
@@ -148,11 +156,11 @@
         dest: /usr/local/bin/cloud-sql-proxy
         mode: '0755'
     
-    - name: Run Proxy
+    - name: Run Proxy on port 3307
       ansible.builtin.shell: |
         pkill cloud-sql-proxy || true
         nohup /usr/local/bin/cloud-sql-proxy \
-          --address 0.0.0.0 --port 9255 \
+          --address 0.0.0.0 --port 3307 \
           --credentials-file /home/ubuntu/gcp-sa-key.json \
           {{ db_instance_name }} > /dev/null 2>&1 &
       changed_when: false

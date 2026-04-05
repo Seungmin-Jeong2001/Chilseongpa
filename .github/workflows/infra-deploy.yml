@@ -17,7 +17,6 @@ jobs:
   terraform:
     name: Infrastructure (Terraform)
     runs-on: ubuntu-latest
-
     env:
       TF_VAR_project_name: ${{ secrets.PROJECT_NAME }}
       TF_VAR_environment: ${{ secrets.ENVIRONMENT }}
@@ -59,12 +58,12 @@ jobs:
         working-directory: infra/terraform
         run: terraform apply -auto-approve -no-color
 
-      - name: Export Outputs for Ansible
+      - name: Export Outputs to Files
         working-directory: infra/terraform
         run: |
           mkdir -p ${{ github.workspace }}/shared-data
           terraform output -json ansible_inventory_data > ${{ github.workspace }}/shared-data/inventory_data.json
-          terraform output -raw gcp_db_proxy_sa_key > ${{ github.workspace }}/shared-data/db_sa_key.txt
+          terraform output -raw gcp_db_proxy_sa_key > ${{ github.workspace }}/shared-data/db_sa_key.json
 
       - name: Upload Ansible Data Artifact
         uses: actions/upload-artifact@v4
@@ -88,7 +87,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: ansible-data
-          path: ${{ github.workspace }}/shared-data
+          path: ${{ github.workspace }}/shared-data/
 
       - name: Setup SSH Keys
         run: |
@@ -97,15 +96,8 @@ jobs:
           echo "${{ secrets.SSH_AWS_KEY }}" > ~/.ssh/id_aws
           chmod 600 ~/.ssh/id_gcp ~/.ssh/id_aws
           
-          # [디버깅] 파일 목록 및 내용 확인 (필요시 제거)
-          ls -R ${{ github.workspace }}/shared-data
-          
           INV_JSON=$(cat ${{ github.workspace }}/shared-data/inventory_data.json)
-          
-          if [ -z "$INV_JSON" ] || [ "$INV_JSON" == "null" ]; then
-            echo "Error: Inventory data is empty."
-            exit 1
-          fi
+          if [ -z "$INV_JSON" ] || [ "$INV_JSON" == "null" ]; then exit 1; fi
 
           GCP_IP=$(echo "$INV_JSON" | jq -r '.gcp_ip // empty')
           GCP_MON_IP=$(echo "$INV_JSON" | jq -r '.gcp_mon_ip // empty')
@@ -119,7 +111,6 @@ jobs:
         working-directory: infra/ansible
         run: |
           INV_JSON=$(cat ${{ github.workspace }}/shared-data/inventory_data.json)
-          
           GCP_IP=$(echo "$INV_JSON" | jq -r .gcp_ip)
           GCP_MON_IP=$(echo "$INV_JSON" | jq -r .gcp_mon_ip)
           BASTION_IP=$(echo "$INV_JSON" | jq -r .bastion_ip)
@@ -128,26 +119,18 @@ jobs:
           cat <<EOF > inventory.ini
           [gcp_primary]
           gcp-main ansible_host=$GCP_IP tunnel_token=$(echo "$INV_JSON" | jq -r .gcp_token) db_conn=$(echo "$INV_JSON" | jq -r .db_connection)
-
           [gcp_monitoring]
           gcp-monitor ansible_host=$GCP_MON_IP tunnel_token=$(echo "$INV_JSON" | jq -r .mon_token)
-
           [aws_bastion]
           aws-bastion ansible_host=$BASTION_IP
-
           [aws_nodes]
           aws-sub ansible_host=$AWS_IP tunnel_token=$(echo "$INV_JSON" | jq -r .aws_token)
 
           [gcp_primary:vars]
           ansible_ssh_private_key_file=~/.ssh/id_gcp
-
           [gcp_monitoring:vars]
           ansible_ssh_private_key_file=~/.ssh/id_gcp
           storage_setup_enabled=false
-
-          [aws_bastion:vars]
-          ansible_ssh_private_key_file=~/.ssh/id_aws
-
           [aws_nodes:vars]
           ansible_ssh_private_key_file=~/.ssh/id_aws
           ansible_ssh_common_args='-o ProxyCommand="ssh -W %h:%p -q ubuntu@$BASTION_IP -i ~/.ssh/id_aws -o StrictHostKeyChecking=no"'
@@ -182,9 +165,9 @@ jobs:
       - name: Run Ansible Playbook
         working-directory: infra/ansible
         run: |
-          # ⭐ [수정 핵심] DB 키의 '내용' 대신 '파일 경로'를 전달합니다.
+          # ⭐ [핵심] 파일 경로를 넘겨서 Ansible이 직접 읽게 함
           ansible-playbook -i inventory.ini playbook.yml \
-            --extra-vars "gcp_db_sa_path=${{ github.workspace }}/shared-data/db_sa_key.txt" \
+            --extra-vars "gcp_db_sa_path=${{ github.workspace }}/shared-data/db_sa_key.json" \
             --extra-vars "project_name=${{ secrets.PROJECT_NAME }}" \
             --extra-vars "environment=${{ secrets.ENVIRONMENT }}" \
             --extra-vars "dockerhub_username=${{ secrets.DOCKERHUB_USERNAME }}" \
