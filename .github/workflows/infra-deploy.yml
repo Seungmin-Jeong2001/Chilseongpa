@@ -165,8 +165,9 @@ jobs:
       - name: Run Ansible Playbook
         working-directory: infra/ansible
         run: |
-          DB_KEY_CONTENT=$(cat ${{ github.workspace }}/shared-data/db_sa_key.txt)
-          
+          # ⭐ [수정 완료] 에러를 유발하던 cat 명령어와 유령 파일(.txt) 참조를 삭제했습니다.
+          # 이제 아래의 gcp_db_sa_path 경로를 통해 Ansible이 직접 파일을 읽습니다.
+
           ansible-playbook -i inventory.ini playbook.yml \
             --extra-vars "gcp_db_sa_path=${{ github.workspace }}/shared-data/db_sa_key.json" \
             --extra-vars "project_name=${{ secrets.PROJECT_NAME }}" \
