@@ -35,10 +35,10 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
 
       - name: Prepare GCP Credentials
         # 경로가 TF_VAR_gcp_credentials 및 GOOGLE_APPLICATION_CREDENTIALS와 일치하는지 확인
