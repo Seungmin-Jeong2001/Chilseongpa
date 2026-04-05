@@ -103,9 +103,10 @@ jobs:
           GCP_MON_IP=$(echo "$INV_JSON" | jq -r '.gcp_mon_ip // empty')
           BASTION_IP=$(echo "$INV_JSON" | jq -r '.bastion_ip // empty')
           
-          [ -n "$GCP_IP" ] && ssh-keyscan -H $GCP_IP >> ~/.ssh/known_hosts
-          [ -n "$GCP_MON_IP" ] && ssh-keyscan -H $GCP_MON_IP >> ~/.ssh/known_hosts
-          [ -n "$BASTION_IP" ] && ssh-keyscan -H $BASTION_IP >> ~/.ssh/known_hosts
+          # ssh-keyscan 실패 시 전체 중단을 막기 위해 || true 처리
+          ssh-keyscan -H $GCP_IP >> ~/.ssh/known_hosts || true
+          ssh-keyscan -H $GCP_MON_IP >> ~/.ssh/known_hosts || true
+          ssh-keyscan -H $BASTION_IP >> ~/.ssh/known_hosts || true
 
       - name: Prepare Inventory
         working-directory: infra/ansible
@@ -131,9 +132,12 @@ jobs:
           [gcp_monitoring:vars]
           ansible_ssh_private_key_file=~/.ssh/id_gcp
           storage_setup_enabled=false
+          [aws_bastion:vars]
+          ansible_ssh_private_key_file=~/.ssh/id_aws
           [aws_nodes:vars]
           ansible_ssh_private_key_file=~/.ssh/id_aws
-          ansible_ssh_common_args='-o ProxyCommand="ssh -W %h:%p -q ubuntu@$BASTION_IP -i ~/.ssh/id_aws -o StrictHostKeyChecking=no"'
+          # SSH 연결 안정성을 위해 ControlMaster 옵션을 추가합니다.
+          ansible_ssh_common_args='-o ProxyCommand="ssh -W %h:%p -q ubuntu@$BASTION_IP -i ~/.ssh/id_aws -o StrictHostKeyChecking=no" -o ControlMaster=auto -o ControlPersist=60s'
 
           [all:vars]
           ansible_python_interpreter=/usr/bin/python3
@@ -165,9 +169,7 @@ jobs:
       - name: Run Ansible Playbook
         working-directory: infra/ansible
         run: |
-          # ⭐ [수정 완료] 에러를 유발하던 cat 명령어와 유령 파일(.txt) 참조를 삭제했습니다.
-          # 이제 아래의 gcp_db_sa_path 경로를 통해 Ansible이 직접 파일을 읽습니다.
-
+          # 💡 [핵심 수정] environment 예약어 충돌을 피하기 위해 deploy_env로 변수명을 변경했습니다.
           ansible-playbook -i inventory.ini playbook.yml \
             --extra-vars "gcp_db_sa_path=${{ github.workspace }}/shared-data/db_sa_key.json" \
             --extra-vars "project_name=${{ secrets.PROJECT_NAME }}" \
