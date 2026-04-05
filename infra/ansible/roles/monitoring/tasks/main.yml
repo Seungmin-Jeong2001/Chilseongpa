@@ -1,7 +1,5 @@
 ---
-# ---------------------------------------------------------
 # 1. 스토리지 및 디렉토리 준비
-# ---------------------------------------------------------
 - name: Create Prometheus/Grafana data dirs (EBS)
   ansible.builtin.file:
     path: "{{ item.path }}"
@@ -26,9 +24,7 @@
     - { name: "grafana", id: "472" }
   when: not (storage_setup_enabled | bool)
 
-# ---------------------------------------------------------
-# 2. EBS 볼륨 마운트 (AWS 환경 전용)
-# ---------------------------------------------------------
+# 2. EBS 볼륨 마운트 (기존 로직 유지)
 - name: Get EBS UUID
   ansible.builtin.command: blkid -s UUID -o value {{ ebs_device_name }}
   register: monitoring_disk_uuid
@@ -69,10 +65,8 @@
         - { path: "/var/lib/grafana", owner: "472", group: "472" }
   when: storage_setup_enabled | bool
 
-# ---------------------------------------------------------
-# 3. 설정 파일 및 대시보드 배포
-# ---------------------------------------------------------
-- name: Ensure Monitoring directories exist
+# 3. 설정 파일 렌더링 및 배포
+- name: Ensure config directories exist
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
@@ -95,19 +89,14 @@
     - { src: "datasource.yml.j2", dest: "grafana/provisioning/datasources/datasource.yml" }
     - { src: "dashboard.yml.j2", dest: "grafana/provisioning/dashboards/dashboard.yml" }
 
-- name: Copy actual Dashboard JSON files
-  ansible.builtin.copy:
-    # 💡 로컬의 roles/monitoring/files/dashboards/ 폴더 안의 모든 파일을 복사
-    src: "dashboards/" 
-    dest: "{{ monitoring_base_dir }}/grafana/provisioning/dashboards/"
-    # ⭐ Grafana 컨테이너가 읽을 수 있도록 472(grafana user) 권한 부여
-    owner: "472"
-    group: "472"
-    mode: '0644'
+- name: Create Kubeconfig and Secrets directory
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - "{{ monitoring_base_dir }}/configs"
 
-# ---------------------------------------------------------
-# 4. Kubeconfig 및 GCP SA Key 보안 배포
-# ---------------------------------------------------------
 - name: Create Kubeconfig files from variables
   ansible.builtin.copy:
     content: "{{ item.content }}"
@@ -118,6 +107,16 @@
     - { name: "kubeconfig-aws-sub.yaml", content: "{{ hostvars['aws-sub']['generated_kubeconfig'] | default('') }}" }
   when: item.content != ""
 
+# 💡 [수정] tree 구조에 맞춰 단일 dashboard.json 파일을 복사합니다.
+- name: Copy Grafana Dashboard JSON
+  ansible.builtin.copy:
+    src: "dashboard.json"
+    dest: "{{ monitoring_base_dir }}/grafana/provisioning/dashboards/dashboard.json"
+    owner: "472"
+    group: "472"
+    mode: '0644'
+
+# 💡 [핵심 보완] 디렉토리/파일 충돌 방지 및 GCP SA Key 생성
 - name: Force remove gcp-sa-key path to prevent directory/file conflict
   ansible.builtin.file:
     path: "/home/ubuntu/gcp-sa-key.json"
@@ -126,7 +125,6 @@
 
 - name: Create GCP DB SA Key file from Artifact path
   ansible.builtin.copy:
-    # 💡 GitHub Runner 아티팩트 경로에서 직접 읽어와 줄바꿈 깨짐 방지
     content: "{{ lookup('file', gcp_db_sa_path) }}"
     dest: "/home/ubuntu/gcp-sa-key.json"
     owner: ubuntu
@@ -134,9 +132,7 @@
     mode: '0644'
   when: gcp_db_sa_path is defined
 
-# ---------------------------------------------------------
-# 5. Docker 컨테이너 운영
-# ---------------------------------------------------------
+# 4. 이미지 사전 풀링
 - name: Pre-pull monitoring images sequentially
   community.docker.docker_image:
     name: "{{ item }}"
@@ -152,18 +148,17 @@
   retries: 5
   delay: 10
 
+# 5. 스택 실행
 - name: Start monitoring stack
   community.docker.docker_compose_v2:
     project_src: "{{ monitoring_base_dir }}"
     state: present
     pull: missing
 
-# ---------------------------------------------------------
-# 6. DB Proxy (Cloud SQL Auth Proxy)
-# ---------------------------------------------------------
+# 6. 호스트용 Cloud SQL Auth Proxy 실행
 - name: Cloud SQL Auth Proxy Setup (Host-level)
   block:
-    - name: Download Proxy Binary
+    - name: Download Proxy
       ansible.builtin.get_url:
         url: https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.11.0/cloud-sql-proxy.linux.amd64
         dest: /usr/local/bin/cloud-sql-proxy
