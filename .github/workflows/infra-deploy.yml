@@ -88,7 +88,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: ansible-data
-          path: ${{ github.workspace }}/shared-data/
+          path: ${{ github.workspace }}/shared-data
 
       - name: Setup SSH Keys
         run: |
@@ -96,6 +96,9 @@ jobs:
           echo "${{ secrets.SSH_GCP_KEY }}" > ~/.ssh/id_gcp
           echo "${{ secrets.SSH_AWS_KEY }}" > ~/.ssh/id_aws
           chmod 600 ~/.ssh/id_gcp ~/.ssh/id_aws
+          
+          # [디버깅] 파일 목록 및 내용 확인 (필요시 제거)
+          ls -R ${{ github.workspace }}/shared-data
           
           INV_JSON=$(cat ${{ github.workspace }}/shared-data/inventory_data.json)
           
