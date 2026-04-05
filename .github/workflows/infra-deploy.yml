@@ -181,7 +181,7 @@ jobs:
             --extra-vars "gemini_api_key=${{ secrets.GEMINI_API_KEY }}" \
             --extra-vars "discord_bot_token=${{ secrets.DISCORD_BOT_TOKEN }}" \
             --extra-vars "discord_channel_id=${{ secrets.DISCORD_CHANNEL_ID }}" \
-            --extra-vars "discord_webhook_url=${{ secrets.DISCORD_WEBHOOK_URL }}" \
+            --extra-vars "alert_webhook_url=${{ secrets.DISCORD_WEBHOOK_URL }}" \
             --extra-vars "gcp_db_password=${{ secrets.GCP_DB_PASSWORD }}" \
             --extra-vars "@group_vars/vault.yml"
 
