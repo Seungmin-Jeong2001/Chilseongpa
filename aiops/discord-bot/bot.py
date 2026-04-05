@@ -2,6 +2,7 @@ import os
 import asyncio
 import discord
 import aiohttp
+import json
 import io
 import time
 from google import genai
@@ -210,6 +211,9 @@ async def process_alert(status, summary, description):
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.json
+    print("--- [RAW WEBHOOK DATA START] ---")
+    print(json.dumps(data, indent=2, ensure_ascii=False))
+    print("--- [RAW WEBHOOK DATA END] ---")
     loop = bot.loop
     for alert in data.get('alerts', []):
         status = alert.get('status', 'firing').upper()
