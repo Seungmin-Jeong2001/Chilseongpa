@@ -49,7 +49,7 @@ resource "cloudflare_zero_trust_access_application" "aws_k8s_api" {
   type    = "self_hosted"
 }
 
-# ✅ 수정: account_id 사용 + decision 변경
+# ✅ 수정: service_token은 객체 리스트가 아니라 '문자열 리스트'여야 합니다.
 resource "cloudflare_zero_trust_access_policy" "monitoring_policy" {
   for_each       = cloudflare_zero_trust_access_application.apps
   application_id = each.value.id
@@ -59,13 +59,11 @@ resource "cloudflare_zero_trust_access_policy" "monitoring_policy" {
   precedence     = 1
 
   include {
-    service_token = [{
-      id = cloudflare_zero_trust_access_service_token.monitoring_token.id
-    }]
+    # 수정됨: [{ id = ... }] -> [id]
+    service_token = [cloudflare_zero_trust_access_service_token.monitoring_token.id]
   }
 }
 
-# ✅ 수정: account_id
 resource "cloudflare_zero_trust_access_policy" "aws_k8s_bypass_policy" {
   application_id = cloudflare_zero_trust_access_application.aws_k8s_api.id
   account_id     = var.cf_account_id
@@ -87,7 +85,6 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "configs" {
   tunnel_id  = each.value.id
 
   config {
-
     # Monitoring
     dynamic "ingress_rule" {
       for_each = each.key == "monitoring" ? [1] : []
@@ -195,12 +192,12 @@ resource "cloudflare_record" "records" {
     prometheus  = { name = "prometheus", tunnel = "monitoring" }
     bot-webhook = { name = "bot-webhook", tunnel = "monitoring" }
     gcp-metrics = { name = "gcp-metrics", tunnel = "gcp" }
-    gcp-app     = { name = "gcp-app", tunnel = "gcp" }
-    gcp-ksm     = { name = "gcp-ksm", tunnel = "gcp" }
-    aws-node    = { name = "aws-node", tunnel = "aws" }
-    aws-app     = { name = "aws-app", tunnel = "aws" }
-    aws-ksm     = { name = "aws-ksm", tunnel = "aws" }
-    aws-k8s     = { name = "aws-k8s", tunnel = "aws" }
+    gcp-app      = { name = "gcp-app", tunnel = "gcp" }
+    gcp-ksm      = { name = "gcp-ksm", tunnel = "gcp" }
+    aws-node     = { name = "aws-node", tunnel = "aws" }
+    aws-app      = { name = "aws-app", tunnel = "aws" }
+    aws-ksm      = { name = "aws-ksm", tunnel = "aws" }
+    aws-k8s      = { name = "aws-k8s", tunnel = "aws" }
   }
 
   zone_id = var.cf_zone_id
@@ -221,8 +218,9 @@ resource "cloudflare_load_balancer_monitor" "monitor" {
   interval       = 60
   expected_codes = "200"
 
+  # ✅ 수정: v4에서는 name 대신 header를 키로 사용해야 합니다.
   header {
-    name   = "Host"
+    header = "Host"
     values = [var.app_domain]
   }
 }
@@ -255,7 +253,8 @@ resource "cloudflare_load_balancer" "lb" {
 # -------------------------------------------------------------------
 # 5. Notification (Webhook)
 # -------------------------------------------------------------------
-resource "cloudflare_notification_webhook" "bot_webhook" {
+# ✅ 수정: 리소스 타입 이름은 'cloudflare_notification_policy_webhooks'여야 합니다.
+resource "cloudflare_notification_policy_webhooks" "bot_webhook" {
   account_id = var.cf_account_id
   name       = "Chilseongpa-Bot-Webhook"
   url        = "https://bot-webhook.bucheongoyangijanggun.com/cloudflare-alert"
@@ -268,8 +267,9 @@ resource "cloudflare_notification_policy" "lb_health_alert" {
   enabled     = true
   alert_type  = "load_balancing_health_status"
 
-  webhooks = [
-    cloudflare_notification_webhook.bot_webhook.id
+  # ✅ 수정: 최신 버전에서는 webhooks_integration_ids를 사용합니다.
+  webhooks_integration_ids = [
+    cloudflare_notification_policy_webhooks.bot_webhook.id
   ]
 
   filters {
