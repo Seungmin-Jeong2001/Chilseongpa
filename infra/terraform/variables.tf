@@ -153,6 +153,12 @@ variable "cf_tunnel_secret" {
   sensitive   = true
 }
 
+variable "cf_discord_webhook_url" {
+  description = "Discord Webhook URL for Cloudflare Alerts"
+  type        = string
+  sensitive   = true
+}
+
 # 기존의 https:// 와 끝의 / 를 모두 제거합니다.
 variable "app_domain" {
   default = "app.bucheongoyangijanggun.com"

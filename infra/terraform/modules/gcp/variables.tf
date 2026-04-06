@@ -69,3 +69,9 @@ variable "monitoring_tunnel_token" {
   type        = string
   sensitive   = true
 }
+
+variable "cf_discord_webhook_url" {
+  description = "Discord Webhook URL for Cloudflare Alerts"
+  type        = string
+  sensitive   = true # 보안을 위해 민감한 정보로 표시
+}

@@ -45,6 +45,7 @@ module "cloudflare" {
   app_domain            = var.app_domain
   grafana_domain        = var.grafana_domain
   prometheus_domain     = var.prometheus_domain
+  cf_discord_webhook_url = var.cf_discord_webhook_url
 }
 
 # -------------------------------------------------------------------

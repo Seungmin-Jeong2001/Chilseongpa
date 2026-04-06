@@ -253,11 +253,12 @@ resource "cloudflare_load_balancer" "lb" {
 # -------------------------------------------------------------------
 # 5. Notification (Webhook)
 # -------------------------------------------------------------------
-# ✅ 수정: 리소스 이름 'cloudflare_notification_policy_webhooks'
 resource "cloudflare_notification_policy_webhooks" "bot_webhook" {
   account_id = var.cf_account_id
-  name       = "Chilseongpa-Bot-Webhook"
-  url        = "https://bot-webhook.bucheongoyangijanggun.com/cloudflare-alert"
+  name       = "Chilseongpa-Emergency-Alert"
+  
+  # 💡 var. 를 붙여서 가져옵니다.
+  url        = var.cf_discord_webhook_url
 }
 
 resource "cloudflare_notification_policy" "lb_health_alert" {

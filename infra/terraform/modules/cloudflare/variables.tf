@@ -36,3 +36,8 @@ variable "prometheus_domain" {
   type        = string
   
 }
+variable "cf_discord_webhook_url" {
+  description = "Discord Webhook URL for Cloudflare Alerts"
+  type        = string
+  sensitive   = true
+}

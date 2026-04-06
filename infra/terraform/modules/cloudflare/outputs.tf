@@ -44,3 +44,8 @@ output "cf_access_client_secret" {
   value     = cloudflare_zero_trust_access_service_token.monitoring_token.client_secret
   sensitive = true
 }
+
+output "cf_webhook_id" {
+  description = "생성된 클라우드플레어 알림 웹훅의 ID"
+  value       = cloudflare_notification_policy_webhooks.bot_webhook.id
+}

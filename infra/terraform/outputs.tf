@@ -20,7 +20,12 @@ output "ansible_inventory_data" {
     grafana_domain    = var.grafana_domain
     prometheus_domain = var.prometheus_domain
     gcp_project_id    = var.gcp_project_id
+    cf_webhook_id     = module.cloudflare.cf_webhook_id
   }
+}
+
+output "cloudflare_webhook_id" {
+  value = module.cloudflare.cf_webhook_id
 }
 
 # -----------------------------------------------
@@ -36,7 +41,7 @@ output "gcp_db_proxy_sa_key" {
   value       = module.gcp.db_proxy_sa_key
   sensitive   = true
 }
-# ... (기존 outputs 유지)
+
 
 # -----------------------------------------------
 # AWS Network outputs
