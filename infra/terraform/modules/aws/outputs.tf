@@ -21,24 +21,6 @@ output "public_subnet_id" {
   value       = aws_subnet.public.id
 }
 
-output "private_subnet_id" {
-  description = "Private Subnet ID"
-  value       = aws_subnet.private.id
-}
-
-# -----------------------------------------------
-# Bastion outputs
-# -----------------------------------------------
-output "bastion_sg_id" {
-  description = "Bastion SG ID"
-  value       = aws_security_group.bastion.id
-}
-
-output "bastion_public_ip" {
-  description = "Bastion Host Public IP"
-  value       = aws_instance.bastion.public_ip
-}
-
 # -----------------------------------------------
 # k3s node outputs
 # -----------------------------------------------
@@ -47,8 +29,13 @@ output "k3s_instance_id" {
   value       = aws_instance.k3s.id
 }
 
+output "k3s_public_ip" {
+  description = "k3s Node Public IP"
+  value       = aws_instance.k3s.public_ip
+}
+
 output "k3s_private_ip" {
-  description = "k3s Node Private IP (Bastion 경유 접속)"
+  description = "k3s Node Private IP"
   value       = aws_instance.k3s.private_ip
 }
 
@@ -56,4 +43,3 @@ output "standby_security_group_id" {
   description = "k3s 노드 Security Group ID"
   value       = aws_security_group.k3s.id
 }
-

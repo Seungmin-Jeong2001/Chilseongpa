@@ -8,45 +8,16 @@ data "aws_ssm_parameter" "ubuntu_2204" {
 }
 
 # -----------------------------------------------
-# Bastion Host — Public Subnet
-# -----------------------------------------------
-resource "aws_instance" "bastion" {
-  ami                         = data.aws_ssm_parameter.ubuntu_2204.value
-  instance_type               = var.bastion_type
-  subnet_id                   = aws_subnet.public.id
-  vpc_security_group_ids      = [aws_security_group.bastion.id]
-  key_name                    = var.key_name
-  associate_public_ip_address = true
-
-  root_block_device {
-    volume_size           = 8
-    volume_type           = "gp3"
-    delete_on_termination = true
-    tags = {
-      Name    = "${var.project_name}-${var.environment}-bastion-vol"
-      Project = var.project_name
-    }
-  }
-
-  tags = {
-    Name        = "${var.project_name}-${var.environment}-bastion"
-    Project     = var.project_name
-    Environment = var.environment
-    Role        = "bastion"
-  }
-}
-
-# -----------------------------------------------
-# k3s Standby Node — Private Subnet
-# cloudflared → NAT Gateway → IGW → Cloudflare
+# k3s Standby Node — Public Subnet
+# Bastion 제거 후 Public Subnet으로 직접 배치
 # -----------------------------------------------
 resource "aws_instance" "k3s" {
   ami                         = data.aws_ssm_parameter.ubuntu_2204.value
   instance_type               = var.instance_type
-  subnet_id                   = aws_subnet.private.id
+  subnet_id                   = aws_subnet.public.id
   vpc_security_group_ids      = [aws_security_group.k3s.id]
   key_name                    = var.key_name
-  associate_public_ip_address = false
+  associate_public_ip_address = true
 
   root_block_device {
     volume_size           = var.root_volume_size
@@ -72,4 +43,3 @@ resource "aws_instance" "k3s" {
     cloudflared service install ${var.aws_tunnel_token}
   EOF
 }
-

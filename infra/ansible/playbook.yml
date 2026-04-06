@@ -2,16 +2,16 @@
 # [playbook.yml]
 # ==============================================================================
 ---
-# 1. 모든 노드에 공통 환경 구성 (Bastion 제외)
+# 1. 모든 노드에 공통 환경 구성
 - name: "기본 환경 구성"
-  hosts: all:!aws_bastion
+  hosts: all
   become: yes
   roles:
     - node-exporter
 
 # 2. GCP 메인 노드 구성 및 앱 배포
 - name: "GCP 독립 K3s 구축"
-  hosts: gcp-main
+  hosts: gcp_k3s
   become: yes
   vars_files:
     - group_vars/vault.yml
@@ -22,7 +22,7 @@
 
 # 3. AWS 서브 노드 구성 및 앱 배포
 - name: "AWS 독립 K3s 구축"
-  hosts: aws-sub
+  hosts: aws_k3s
   become: yes
   vars_files:
     - group_vars/vault.yml
@@ -33,7 +33,7 @@
 
 # 4. 모니터링 서버 구성 (Docker 기반)
 - name: "모니터링 및 알림 센터 구축"
-  hosts: gcp-monitor
+  hosts: gcp_monitoring
   become: yes
   vars_files:
     - group_vars/vault.yml

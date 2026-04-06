@@ -15,10 +15,9 @@ cd "$TF_DIR"
 echo "📡 Terraform output 읽는 중..."
 GCP_MON_IP=$(terraform output -raw gcp_monitoring_ephemeral_ip 2>/dev/null || echo "")
 GCP_K3S_IP=$(terraform output -raw gcp_k3s_ephemeral_ip 2>/dev/null || echo "")
-AWS_BASTION_IP=$(terraform output -raw aws_bastion_public_ip 2>/dev/null || echo "")
-AWS_K3S_IP=$(terraform output -raw aws_k3s_private_ip 2>/dev/null || echo "")
+AWS_K3S_IP=$(terraform output -raw aws_k3s_public_ip 2>/dev/null || echo "")
 
-if [ -z "$GCP_MON_IP" ] || [ -z "$AWS_BASTION_IP" ]; then
+if [ -z "$GCP_MON_IP" ] || [ -z "$AWS_K3S_IP" ]; then
   echo "❌ terraform output을 읽을 수 없습니다. terraform apply를 먼저 실행하세요."
   exit 1
 fi
@@ -52,17 +51,10 @@ Host gcp-k3s
   IdentityFile ${KEY_DIR}/my_gcp_key
   StrictHostKeyChecking no
 
-Host aws-bastion
-  HostName ${AWS_BASTION_IP}
-  User ubuntu
-  IdentityFile ${KEY_DIR}/chilseongpa_keypair.pem
-  StrictHostKeyChecking no
-
 Host aws-k3s
   HostName ${AWS_K3S_IP}
   User ubuntu
   IdentityFile ${KEY_DIR}/chilseongpa_keypair.pem
-  ProxyJump aws-bastion
   StrictHostKeyChecking no
 $MARKER_END
 EOF
@@ -73,5 +65,4 @@ echo ""
 echo "접속 방법:"
 echo "  ssh gcp-monitoring   # GCP 모니터링 VM (Prometheus, Grafana)"
 echo "  ssh gcp-k3s          # GCP K3s Primary 노드"
-echo "  ssh aws-bastion      # AWS Bastion Host"
-echo "  ssh aws-k3s          # AWS K3s Standby 노드 (Bastion 자동 경유)"
+echo "  ssh aws-k3s          # AWS K3s Standby 노드 (직접 접속)"

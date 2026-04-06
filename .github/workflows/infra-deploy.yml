@@ -102,11 +102,11 @@ jobs:
 
           GCP_IP=$(echo "$INV_JSON" | jq -r '.gcp_ip // empty')
           GCP_MON_IP=$(echo "$INV_JSON" | jq -r '.gcp_mon_ip // empty')
-          BASTION_IP=$(echo "$INV_JSON" | jq -r '.bastion_ip // empty')
+          AWS_IP=$(echo "$INV_JSON" | jq -r '.aws_ip // empty')
           
           ssh-keyscan -H $GCP_IP >> ~/.ssh/known_hosts || true
           ssh-keyscan -H $GCP_MON_IP >> ~/.ssh/known_hosts || true
-          ssh-keyscan -H $BASTION_IP >> ~/.ssh/known_hosts || true
+          ssh-keyscan -H $AWS_IP >> ~/.ssh/known_hosts || true
 
       - name: Prepare Inventory
         working-directory: infra/ansible
@@ -116,36 +116,29 @@ jobs:
           # 변수 추출
           GCP_IP=$(echo "$INV_JSON" | jq -r .gcp_ip)
           GCP_MON_IP=$(echo "$INV_JSON" | jq -r .gcp_mon_ip)
-          BASTION_IP=$(echo "$INV_JSON" | jq -r .bastion_ip)
           AWS_IP=$(echo "$INV_JSON" | jq -r .aws_ip)
           WEBHOOK_ID=$(echo "$INV_JSON" | jq -r .cf_webhook_id)
 
           cat <<EOF > inventory.ini
-          [gcp_primary]
+          [gcp_k3s]
           gcp-main ansible_host=$GCP_IP tunnel_token=$(echo "$INV_JSON" | jq -r .gcp_token) db_conn=$(echo "$INV_JSON" | jq -r .db_connection)
 
           [gcp_monitoring]
           gcp-monitor ansible_host=$GCP_MON_IP tunnel_token=$(echo "$INV_JSON" | jq -r .mon_token)
 
-          [aws_bastion]
-          aws-bastion ansible_host=$BASTION_IP
-
-          [aws_nodes]
+          [aws_k3s]
           aws-sub ansible_host=$AWS_IP tunnel_token=$(echo "$INV_JSON" | jq -r .aws_token)
 
-          [gcp_primary:vars]
+          [gcp_k3s:vars]
           ansible_ssh_private_key_file=~/.ssh/id_gcp
 
           [gcp_monitoring:vars]
           ansible_ssh_private_key_file=~/.ssh/id_gcp
           storage_setup_enabled=false
 
-          [aws_bastion:vars]
+          [aws_k3s:vars]
           ansible_ssh_private_key_file=~/.ssh/id_aws
-
-          [aws_nodes:vars]
-          ansible_ssh_private_key_file=~/.ssh/id_aws
-          ansible_ssh_common_args='-o ProxyCommand="ssh -W %h:%p -q ubuntu@$BASTION_IP -i ~/.ssh/id_aws -o StrictHostKeyChecking=no" -o ControlMaster=auto -o ControlPersist=60s'
+          ansible_ssh_common_args='-o StrictHostKeyChecking=no'
 
           [all:vars]
           ansible_python_interpreter=/usr/bin/python3

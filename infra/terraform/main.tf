@@ -65,7 +65,6 @@ module "aws" {
   # 네트워크 설정 
   vpc_cidr           = var.vpc_cidr
   public_subnet_cidr  = var.public_subnet_cidr
-  private_subnet_cidr = var.private_subnet_cidr
   availability_zone  = var.availability_zone
 
   # Cloudflare 터널 토큰 주입
@@ -77,7 +76,6 @@ module "aws" {
 
   # EC2 인스턴스 타입 및 볼륨 설정
   instance_type    = var.instance_type    # k3s 노드 인스턴스 타입
-  bastion_type     = var.bastion_type     # Bastion 인스턴스 타입
   root_volume_size = var.root_volume_size # Root EBS 볼륨 크기
 }
 

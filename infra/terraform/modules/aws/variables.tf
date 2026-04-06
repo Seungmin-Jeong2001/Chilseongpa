@@ -26,19 +26,13 @@ variable "public_subnet_cidr" {
   type        = string
 }
 
-variable "private_subnet_cidr" {
-  description = "Private subnet CIDR block (k3s / Monitoring 배치)"
-  type        = string
-  default     = "10.20.2.0/24"
-}
-
 variable "availability_zone" {
   description = "Availability zone"
   type        = string
 }
 
 variable "allowed_ssh_cidr" {
-  description = "CIDR block allowed to SSH (Bastion에만 적용)"
+  description = "CIDR block allowed to SSH"
   type        = string
   default     = "0.0.0.0/0"
 }
@@ -55,12 +49,6 @@ variable "instance_type" {
   description = "k3s node EC2 instance type"
   type        = string
   default     = "t3.small"
-}
-
-variable "bastion_type" {
-  description = "Bastion Host EC2 instance type"
-  type        = string
-  default     = "t3.micro"
 }
 
 variable "root_volume_size" {
