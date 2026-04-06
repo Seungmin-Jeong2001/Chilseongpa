@@ -111,14 +111,14 @@
     generated_kubeconfig: "{{ k3s_config_encoded.content | b64decode | regex_replace('https://127.0.0.1:6443', 'https://' + gcp_internal_ip + ':6443') }}"
   when: inventory_hostname == 'gcp-main'
 
-- name: Set AWS Kubeconfig Fact (Token Auth + CA removal)
+# 4. Kubeconfig 정보 생성 (Jinja2 템플릿 방식)
+- name: Generate AWS Kubeconfig from template
   set_fact:
-    generated_kubeconfig: "{{ k3s_config_encoded.content | b64decode | 
-      regex_replace('https://127.0.0.1:6443', 'https://aws-k8s.bucheongoyangijanggun.com') |
-      regex_replace('certificate-authority-data: .*', 'insecure-skip-tls-verify: true') |
-      regex_replace('client-certificate-data: .*', '') |
-      regex_replace('client-key-data: .*', '') |
-      regex_replace('user:', 'user:\n    token: ' + aws_bot_token_raw.stdout) }}"
+    generated_kubeconfig: "{{ lookup('template', 'kubeconfig_aws.j2') }}"
+  vars:
+    # 템플릿 안의 변수({{ aws_k8s_url }}, {{ aws_bot_token }})와 매핑됩니다.
+    aws_k8s_url: "https://aws-k8s.bucheongoyangijanggun.com"
+    aws_bot_token: "{{ aws_bot_token_raw.stdout }}"
   when: inventory_hostname == 'aws-sub'
 
 - name: Display Kubeconfig for GHA Capture
