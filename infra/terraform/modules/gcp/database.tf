@@ -1,12 +1,10 @@
-
 # ==============================================================================
-# [database.tf] 백엔드 앱의 데이터를 저장할 구글 관리형 DB를 생성합니다.
-# 오토스케일링을 지원하는 Auth Proxy 아키텍처를 적용했습니다.
+# [modules/gcp/database.tf] 
 # ==============================================================================
 
 resource "google_sql_database_instance" "primary_db" {
   name             = "hybrid-primary-db"
-  database_version = "MYSQL_8_0" # 최신 MySQL 8.0 엔진 사용
+  database_version = "MYSQL_8_0" 
   region           = var.gcp_region
 
   settings {
@@ -19,9 +17,6 @@ resource "google_sql_database_instance" "primary_db" {
 
     ip_configuration {
 
-      # 💡 핵심: Auth Proxy(IAM 인증)가 다이렉트로 찾아올 수 있도록 Public IP 활성화
-
-      # (IP 방화벽 검사를 하지 않으므로 authorized_networks 설정이 필요 없습니다!)
 
       ipv4_enabled = true 
 
@@ -39,10 +34,8 @@ resource "google_sql_user" "root_user" {
   instance = google_sql_database_instance.primary_db.name
   password = var.gcp_db_password # variables.tf에서 주입받은 비밀번호 사용
 }
-# ----------------------------------------------------------------
-# 👇 추가되는 부분: 백엔드 앱의 데이터가 정착할 '논리적 DB(방)' 공간 생성
-# ----------------------------------------------------------------
+
 resource "google_sql_database" "app_db" {
-  name     = "hybrid_app_db" # 호성님(백엔드) 설정에 적어넣을 실제 DB 이름
+  name     = "hybrid_app_db" # 백엔드 설정에 적어넣을 실제 DB 이름
   instance = google_sql_database_instance.primary_db.name
 }

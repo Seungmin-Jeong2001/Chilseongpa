@@ -1,3 +1,6 @@
+# ==============================================================================
+# [app-chart/ingress.yaml]
+# ==============================================================================
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -7,7 +10,7 @@ metadata:
     traefik.ingress.kubernetes.io/router.entrypoints: web
 spec:
   rules:
-    - host: app.bucheongoyangijanggun.com # 나중에 진짜 도메인으로 변경해야함
+    - host: app.bucheongoyangijanggun.com 
       http:
         paths:
         - path: /api

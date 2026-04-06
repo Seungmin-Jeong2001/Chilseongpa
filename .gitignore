@@ -46,3 +46,22 @@ my_gcp_key.pub
 
 # 테라폼 설정 폴더
 .terraform/
+
+# python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# virtual env
+venv/
+.env/
+
+# logs
+*.log
+
+# env
+.env
+
+# IDE
+.vscode/
+.idea/

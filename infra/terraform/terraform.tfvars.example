@@ -1,11 +1,4 @@
 # -----------------------------------------------
-# 이 파일을 복사해서 terraform.tfvars로 사용하세요
-# cp terraform.tfvars.example terraform.tfvars
-# -----------------------------------------------
-# ⚠️  terraform.tfvars는 절대 Git에 커밋하지 마세요!
-# ⚠️  .gitignore에 terraform.tfvars가 등록되어 있는지 확인하세요!
-
-# -----------------------------------------------
 # Global
 # -----------------------------------------------
 project_name = "chilseongpa"
@@ -18,7 +11,7 @@ aws_region          = "ap-northeast-2"
 vpc_cidr            = "10.20.0.0/16"
 public_subnet_cidr  = "10.20.1.0/24"
 availability_zone   = "ap-northeast-2a"
-allowed_ssh_cidr    = "0.0.0.0/0"   # 본인 IP/32 로 변경 권장 (예: "1.2.3.4/32")
+allowed_ssh_cidr    = "0.0.0.0/0"  
 
 # AWS 콘솔에서 미리 생성한 Key Pair 이름
 key_name            = "chilseongpa_keypair"

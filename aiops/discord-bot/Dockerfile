@@ -4,7 +4,7 @@ FROM python:3.11-slim
 # 2. 작업 디렉토리 설정
 WORKDIR /app
 
-# 3. 필수 도구 설치 및 캐시 정리 (이미지 용량 최적화)
+# 3. 필수 도구 설치 및 캐시 정리 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \

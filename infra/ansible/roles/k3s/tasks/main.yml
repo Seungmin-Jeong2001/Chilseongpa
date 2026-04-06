@@ -1,3 +1,6 @@
+# ==============================================================================
+# [k3s/tasks/main.yml]
+# ==============================================================================
 ---
 # 1. K3s 설치 및 서비스 활성화
 - name: Check if k3s is installed
@@ -17,7 +20,7 @@
     state: started
     enabled: yes
 
-# 2. [완성형] Kube-state-metrics 배포 (Raw 파일 직접 설치)
+# 2. [완성형] Kube-state-metrics 배포 
 - name: Deploy kube-state-metrics
   shell: |
     BASE_URL="https://raw.githubusercontent.com/kubernetes/kube-state-metrics/v2.10.0/examples/standard"
@@ -98,7 +101,7 @@
   when: inventory_hostname == 'aws-sub'
   changed_when: false
 
-# 4. Kubeconfig 정보 추출 및 외부용 변환 (핵심 보완)
+# 4. Kubeconfig 정보 추출 및 외부용 변환 
 - name: Slurp kubeconfig from master
   ansible.builtin.slurp:
     src: /etc/rancher/k3s/k3s.yaml
@@ -111,12 +114,11 @@
     generated_kubeconfig: "{{ k3s_config_encoded.content | b64decode | regex_replace('https://127.0.0.1:6443', 'https://' + gcp_internal_ip + ':6443') }}"
   when: inventory_hostname == 'gcp-main'
 
-# 4. Kubeconfig 정보 생성 (Jinja2 템플릿 방식)
+# 4. Kubeconfig 정보 생성 
 - name: Generate AWS Kubeconfig from template
   set_fact:
     generated_kubeconfig: "{{ lookup('template', 'kubeconfig_aws.j2') }}"
   vars:
-    # 템플릿 안의 변수({{ aws_k8s_url }}, {{ aws_bot_token }})와 매핑됩니다.
     aws_k8s_url: "https://aws-k8s.bucheongoyangijanggun.com"
     aws_bot_token: "{{ aws_bot_token_raw.stdout }}"
   when: inventory_hostname == 'aws-sub'

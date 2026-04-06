@@ -1,3 +1,6 @@
+# ==============================================================================
+# [docker/tasks/main.yml]
+# ==============================================================================
 ---
 # 1. 기존 패키지 업데이트 및 필수 도구 설치
 - name: Install prerequisite packages
@@ -40,23 +43,23 @@
       - docker-ce-cli
       - containerd.io
       - docker-buildx-plugin
-      - docker-compose-plugin  # 👈 이제 정상적으로 설치됩니다!
+      - docker-compose-plugin 
     state: present
     update_cache: true
 # - name: Install system packages
 #   ansible.builtin.apt:
 #     name:
-#       - docker.io                 # Docker Engine 설치 -> 구버전 우툰투에서 설치된다고함
-#       - docker-compose-plugin     # Docker Compose V2 plugin 설치 
-#       - python3-pip               # Python 패키지 설치 도구
-#       - python3-setuptools        # Python 패키지 빌드 지원
+#       - docker.io                 
+#       - docker-compose-plugin    
+#       - python3-pip               
+#       - python3-setuptools       
 #     state: present
 #     update_cache: true
 
 - name: Install docker python package
   ansible.builtin.pip:
     name:
-      - docker                    # community.docker 모듈 실행에 필요
+      - docker                    
 
 - name: Configure Docker log rotation
   ansible.builtin.copy:

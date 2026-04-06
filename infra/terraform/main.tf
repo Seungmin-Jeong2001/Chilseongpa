@@ -1,3 +1,8 @@
+# ==============================================================================
+# [main.tf]
+# ==============================================================================
+
+
 # -------------------------------------------------------------------
 # 1. Terraform & Providers 설정
 # -------------------------------------------------------------------
@@ -16,7 +21,7 @@ terraform {
 }
 
 provider "aws" {
-  region = var.aws_region # 기본값 ap-northeast-2
+  region = var.aws_region 
 }
 
 provider "cloudflare" {
@@ -57,7 +62,7 @@ module "aws" {
   project_name       = var.project_name
   environment        = var.environment
 
-  # 네트워크 설정 (기존 network 모듈의 역할을 내재화)
+  # 네트워크 설정 
   vpc_cidr           = var.vpc_cidr
   public_subnet_cidr  = var.public_subnet_cidr
   private_subnet_cidr = var.private_subnet_cidr

@@ -1,3 +1,6 @@
-collections:            # 추후 gitaction에서 ansible-galaxy collection install -r requirements.yml 실행해줘야함. (엔서블 설치와 run playbook 사이에)
+# ==============================================================================
+# [requirements.yml]
+# ==============================================================================
+collections:          
   - name: kubernetes.core
     version: "2.4.0"

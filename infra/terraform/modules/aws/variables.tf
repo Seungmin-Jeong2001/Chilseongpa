@@ -1,4 +1,7 @@
-# modules/aws/variables.tf
+# ==============================================================================
+# [modules/aws/variables.tf] 
+# ==============================================================================
+
 
 variable "project_name" {
   description = "Project name"

@@ -1,3 +1,6 @@
+# ==============================================================================
+# [app-chart/values.yaml]
+# ==============================================================================
 backend:
   image: "docker.io/jeongseungmin/chilseongpa_dockerhub"
   tag: "backend-prod-v1.0.15"

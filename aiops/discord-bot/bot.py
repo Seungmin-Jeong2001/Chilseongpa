@@ -27,10 +27,8 @@ KUBE_CONFIGS = {
     "aws": os.getenv('KUBECONFIG_AWS', '/root/.kube/config-aws')
 }
 
-# 최신 Gemini AI SDK 설정
 client = genai.Client(api_key=GEMINI_API_KEY)
-MODEL_ID = "gemini-2.0-flash" # 혹은 정님이 사용하시는 모델 ID
-
+MODEL_ID = "gemini-2.5-flash"
 app = Flask(__name__)
 
 # ---------------------------------------------------------

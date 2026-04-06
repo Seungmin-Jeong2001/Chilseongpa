@@ -70,7 +70,7 @@ infra/
 
 | 영역       | 클라우드   | 서브넷  | 리소스                        | 역할                                              |
 | ---------- | ---------- | ------- | ----------------------------- | ------------------------------------------------- |
-| Primary    | GCP        | Private | VM (e2-standard-2), Cloud SQL | K3s 클러스터 (Active), DB                         |
+| Ac    | GCP        | Private | VM (e2-standard-2), Cloud SQL | K3s 클러스터 (Active), DB                         |
 | Monitoring | GCP        | Private | VM (e2-small)                 | Prometheus / Grafana / Alertmanager / Discord Bot |
 | Standby    | AWS        | Private | EC2 t3.small                  | K3s 클러스터 (Standby)                            |
 | Bastion    | AWS        | Public  | EC2 t3.micro                  | SSH 진입점 (AWS)                                  |

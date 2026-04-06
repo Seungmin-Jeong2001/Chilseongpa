@@ -1,3 +1,7 @@
+# ==============================================================================
+# [ansible_inventory.tf]
+# ==============================================================================
+
 resource "local_file" "ansible_inventory" {
   content = templatefile("${path.module}/inventory.tpl", {
     # 1. GCP

@@ -1,5 +1,5 @@
 # ==============================================================================
-# [outputs.tf] 인프라 배포 후 아키텍트가 팀원들에게 불출할 결과물 목록
+# [modules/gcp/outputs.tf] 
 # ==============================================================================
 
 output "k3s_ephemeral_ip" {
@@ -23,12 +23,11 @@ output "db_proxy_sa_key" {
   sensitive   = true # 터미널에 평문 노출 방지 (볼 때는 terraform output -raw db_proxy_sa_key 명령어 사용)
 }
 
-# 로컬 테스트를 위한 키 저장(CI/CD 떈.. 이거 어캄?)
+# 로컬 테스트를 위한 키 저장
 resource "local_file" "db_proxy_sa_key_file" {
   content  = base64decode(google_service_account_key.db_proxy_sa_key.private_key)
   filename = "${path.root}/../ansible/roles/monitoring/files/gcp-sa-key.json"
 }
-# 🗑️ monitoring_sa_key 부분은 Cloudflare Tunnel 도입으로 인해 완전히 삭제!
 
 output "db_instance_connection_name" {
   description = "앤서블에서 사용할 Cloud SQL 연결 이름"

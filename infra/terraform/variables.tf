@@ -1,4 +1,7 @@
-#root variables.tf
+# ==============================================================================
+# [variables.tf]
+# ==============================================================================
+
 
 # -----------------------------------------------
 # Global variables
@@ -94,7 +97,6 @@ variable "availability_zone" {
 }
 
 # SSH 허용 CIDR
-# GitHub Actions에서 MY_IP Secret으로 주입
 variable "allowed_ssh_cidr" {
   description = "AWS CIDR block allowed to SSH"
   type        = string
@@ -108,7 +110,7 @@ variable "instance_type" {
   default     = "t3.small"
 }
 
-# Bastion 인스턴스 타입 (트래픽 적으므로 t3.micro)
+# Bastion 인스턴스 타입
 variable "bastion_type" {
   description = "AWS Bastion Host EC2 instance type"
   type        = string
@@ -122,7 +124,6 @@ variable "root_volume_size" {
   default     = 20
 }
 
-# AWS 콘솔에서 미리 만들어둔 Key Pair 이름
 variable "key_name" {
   description = "AWS Key Pair name"
   type        = string
@@ -159,7 +160,6 @@ variable "cf_discord_webhook_url" {
   sensitive   = true
 }
 
-# 기존의 https:// 와 끝의 / 를 모두 제거합니다.
 variable "app_domain" {
   default = "app.bucheongoyangijanggun.com"
 }

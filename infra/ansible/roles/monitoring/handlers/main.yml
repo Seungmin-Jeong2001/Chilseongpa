@@ -1,4 +1,6 @@
-# roles/monitoring/handlers/main.yml
+# ==============================================================================
+# [monitoring/handlers/main.yml]
+# ==============================================================================
 - name: Reload Prometheus
   uri:
     url: http://localhost:9090/-/reload

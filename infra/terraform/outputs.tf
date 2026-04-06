@@ -1,3 +1,8 @@
+# ==============================================================================
+# [outputs.tf]
+# ==============================================================================
+
+
 # -----------------------------------------------
 # Ansible Inventory Data (For GitHub Actions)
 # -----------------------------------------------
@@ -40,6 +45,14 @@ output "gcp_db_proxy_sa_key" {
   description = "AWS DB 연동을 위한 Cloud SQL Proxy JSON 키"
   value       = module.gcp.db_proxy_sa_key
   sensitive   = true
+}
+
+# -----------------------------------------------
+# GCP Monitoring Server outputs
+# -----------------------------------------------
+output "gcp_monitoring_ephemeral_ip" {
+  description = "GCP Monitoring Server Public IP (Ansible 접속용)"
+  value       = module.gcp.monitoring_ephemeral_ip
 }
 
 
@@ -87,44 +100,39 @@ output "aws_standby_security_group_id" {
   value       = module.aws.standby_security_group_id
 }
 
-# -----------------------------------------------
-# GCP Monitoring Server outputs
-# -----------------------------------------------
-output "gcp_monitoring_ephemeral_ip" {
-  description = "GCP Monitoring Server Public IP (Ansible 접속용)"
-  value       = module.gcp.monitoring_ephemeral_ip
-}
 
-output "ssh_commands" {
-  description = "Convenient SSH commands"
-  value = <<EOT
-================ SSH ACCESS ================
+## 로컬 테스트 시 사용할 수 있는 SSH 명령어 템플릿 (주석 처리)
+## 사용 경로는 infra/terraform, infra/ansible 같은 라인들
+# output "ssh_commands" {
+#   description = "Convenient SSH commands"
+#   value = <<EOT
+# ================ SSH ACCESS ================
 
 
-# SSH Agent 시작 및 키 추가 (로컬에서 실행)
-eval $(ssh-agent -s)
-ssh-add ../../chilseongpa_keypair.pem
-ssh-add ../../my_gcp_key
-ssh-add -l
+# # SSH Agent 시작 및 키 추가 (로컬에서 실행)
+# eval $(ssh-agent -s)
+# ssh-add ../../chilseongpa_keypair.pem
+# ssh-add ../../my_gcp_key
+# ssh-add -l
 
-# 변수 주입
-set -a
-source ./group_vars/.env
-set +a
-echo $DISCORD_BOT_TOKEN
+# # 변수 주입
+# set -a
+# source ./group_vars/.env
+# set +a
+# echo $DISCORD_BOT_TOKEN
 
-# Bastion Host
-ssh -i ../../chilseongpa_keypair.pem ubuntu@${module.aws.bastion_public_ip}
+# # Bastion Host
+# ssh -i ../../chilseongpa_keypair.pem ubuntu@${module.aws.bastion_public_ip}
 
-# k3s Node (via Bastion)
-ssh -i ../../chilseongpa_keypair.pem -A -J ubuntu@${module.aws.bastion_public_ip} ubuntu@${module.aws.k3s_private_ip}
+# # k3s Node (via Bastion)
+# ssh -i ../../chilseongpa_keypair.pem -A -J ubuntu@${module.aws.bastion_public_ip} ubuntu@${module.aws.k3s_private_ip}
 
-# GCP k3s
-ssh -i ../../my_gcp_key ubuntu@${module.gcp.k3s_ephemeral_ip}
+# # GCP k3s
+# ssh -i ../../my_gcp_key ubuntu@${module.gcp.k3s_ephemeral_ip}
  
-# GCP Monitoring
-ssh -i ../../my_gcp_key ubuntu@${module.gcp.monitoring_ephemeral_ip}
+# # GCP Monitoring
+# ssh -i ../../my_gcp_key ubuntu@${module.gcp.monitoring_ephemeral_ip}
 
-===========================================
-EOT
-}
+# ===========================================
+# EOT
+# }
