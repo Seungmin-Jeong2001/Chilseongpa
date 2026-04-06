@@ -13,7 +13,7 @@ config_render_mode: "template"
 
 
 # 4. 알림 설정
-alert_webhook_url: "http://alert-bot:5000/webhook"
+alert_webhook_url: "http://chilseongpa-bot:5000/webhook"
 
 # 디스코드 개발자 포털에서 가져온 값들
 discord_bot_token: "{{ lookup('env', 'DISCORD_BOT_TOKEN') }}"

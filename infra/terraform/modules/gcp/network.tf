@@ -46,7 +46,7 @@ resource "google_compute_firewall" "allow_internal_metrics" {
 
   allow {
     protocol = "tcp"
-    ports    = ["9100", "30800", "30080"]
+    ports    = ["9100", "30800", "30080", "6443", "5000"] # kube-apiserver(6443), bot-webhook(5000) 포트 추가
   }
 
   target_tags = ["k3s-node"]

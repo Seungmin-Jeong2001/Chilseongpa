@@ -1,4 +1,0 @@
-discord.py>=2.3.2
-Flask>=3.0.0
-google-generativeai>=0.8.0
-requests>=2.31.0

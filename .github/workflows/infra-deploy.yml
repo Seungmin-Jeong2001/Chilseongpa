@@ -1,0 +1,200 @@
+name: Infrastructure Provision & App Deploy
+
+on:
+  # push:
+  #   branches: [ main ]
+  #   paths:
+  #     - 'infra/**'
+  #     - 'application/**'
+  #     - '.github/workflows/infra-deploy.yml'
+  workflow_dispatch: 
+
+concurrency:
+  group: terraform-state
+  cancel-in-progress: false
+
+jobs:
+  terraform:
+    name: Infrastructure (Terraform)
+    runs-on: ubuntu-latest
+    env:
+      TF_VAR_project_name: ${{ secrets.PROJECT_NAME }}
+      TF_VAR_environment: ${{ secrets.ENVIRONMENT }}
+      TF_VAR_gcp_project_id: ${{ secrets.GCP_PROJECT_ID }}
+      TF_VAR_gcp_db_password: ${{ secrets.GCP_DB_PASSWORD }}
+      TF_VAR_gcp_credentials: "${{ github.workspace }}/infra/terraform/gcp-creds.json"
+      TF_VAR_gcp_ssh_public_key: ${{ secrets.SSH_GCP_KEY_PUB }}
+      TF_VAR_cf_api_token: ${{ secrets.CF_API_TOKEN }}
+      TF_VAR_cf_account_id: ${{ secrets.CF_ACCOUNT_ID }}
+      TF_VAR_cf_zone_id: ${{ secrets.CF_ZONE_ID }}
+      TF_VAR_cf_tunnel_secret: ${{ secrets.CF_TUNNEL_SECRET }}
+      TF_VAR_key_name: ${{ secrets.AWS_KEY_NAME }}
+      TF_VAR_aws_region: ${{ secrets.AWS_REGION }}
+      TF_VAR_cf_discord_webhook_url: ${{ secrets.DISCORD_CF_BOT }}
+      GOOGLE_APPLICATION_CREDENTIALS: "${{ github.workspace }}/infra/terraform/gcp-creds.json"
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v5
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_wrapper: false 
+
+      - name: Prepare GCP Credentials
+        run: echo '${{ secrets.GCP_CREDENTIALS }}' > infra/terraform/gcp-creds.json
+
+      - name: Terraform Init
+        working-directory: infra/terraform
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.PROJECT_NAME }}-tfstate" \
+            -backend-config="prefix=terraform/state"
+
+      - name: Terraform Apply
+        id: apply
+        working-directory: infra/terraform
+        run: terraform apply -auto-approve -no-color
+
+      - name: Export Outputs to Files
+        working-directory: infra/terraform
+        run: |
+          mkdir -p ${{ github.workspace }}/shared-data
+          terraform output -json ansible_inventory_data > ${{ github.workspace }}/shared-data/inventory_data.json
+          terraform output -raw gcp_db_proxy_sa_key > ${{ github.workspace }}/shared-data/db_sa_key.json
+
+      - name: Upload Ansible Data Artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: ansible-data
+          path: ${{ github.workspace }}/shared-data/
+          retention-days: 1
+
+  ansible:
+    name: Deployment (Ansible)
+    needs: terraform
+    runs-on: ubuntu-latest
+    env:
+      ANSIBLE_VAULT_PASSWORD_FILE: ${{ github.workspace }}/infra/ansible/.vault_pass
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v5
+
+      - name: Download Ansible Data Artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: ansible-data
+          path: ${{ github.workspace }}/shared-data/
+
+      - name: Setup SSH Keys
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_GCP_KEY }}" > ~/.ssh/id_gcp
+          echo "${{ secrets.SSH_AWS_KEY }}" > ~/.ssh/id_aws
+          chmod 600 ~/.ssh/id_gcp ~/.ssh/id_aws
+          
+          INV_JSON=$(cat ${{ github.workspace }}/shared-data/inventory_data.json)
+          if [ -z "$INV_JSON" ] || [ "$INV_JSON" == "null" ]; then exit 1; fi
+
+          GCP_IP=$(echo "$INV_JSON" | jq -r '.gcp_ip // empty')
+          GCP_MON_IP=$(echo "$INV_JSON" | jq -r '.gcp_mon_ip // empty')
+          BASTION_IP=$(echo "$INV_JSON" | jq -r '.bastion_ip // empty')
+          
+          ssh-keyscan -H $GCP_IP >> ~/.ssh/known_hosts || true
+          ssh-keyscan -H $GCP_MON_IP >> ~/.ssh/known_hosts || true
+          ssh-keyscan -H $BASTION_IP >> ~/.ssh/known_hosts || true
+
+      - name: Prepare Inventory
+        working-directory: infra/ansible
+        run: |
+          INV_JSON=$(cat ${{ github.workspace }}/shared-data/inventory_data.json)
+          
+          # 변수 추출
+          GCP_IP=$(echo "$INV_JSON" | jq -r .gcp_ip)
+          GCP_MON_IP=$(echo "$INV_JSON" | jq -r .gcp_mon_ip)
+          BASTION_IP=$(echo "$INV_JSON" | jq -r .bastion_ip)
+          AWS_IP=$(echo "$INV_JSON" | jq -r .aws_ip)
+          WEBHOOK_ID=$(echo "$INV_JSON" | jq -r .cf_webhook_id)
+
+          cat <<EOF > inventory.ini
+          [gcp_primary]
+          gcp-main ansible_host=$GCP_IP tunnel_token=$(echo "$INV_JSON" | jq -r .gcp_token) db_conn=$(echo "$INV_JSON" | jq -r .db_connection)
+
+          [gcp_monitoring]
+          gcp-monitor ansible_host=$GCP_MON_IP tunnel_token=$(echo "$INV_JSON" | jq -r .mon_token)
+
+          [aws_bastion]
+          aws-bastion ansible_host=$BASTION_IP
+
+          [aws_nodes]
+          aws-sub ansible_host=$AWS_IP tunnel_token=$(echo "$INV_JSON" | jq -r .aws_token)
+
+          [gcp_primary:vars]
+          ansible_ssh_private_key_file=~/.ssh/id_gcp
+
+          [gcp_monitoring:vars]
+          ansible_ssh_private_key_file=~/.ssh/id_gcp
+          storage_setup_enabled=false
+
+          [aws_bastion:vars]
+          ansible_ssh_private_key_file=~/.ssh/id_aws
+
+          [aws_nodes:vars]
+          ansible_ssh_private_key_file=~/.ssh/id_aws
+          ansible_ssh_common_args='-o ProxyCommand="ssh -W %h:%p -q ubuntu@$BASTION_IP -i ~/.ssh/id_aws -o StrictHostKeyChecking=no" -o ControlMaster=auto -o ControlPersist=60s'
+
+          [all:vars]
+          ansible_python_interpreter=/usr/bin/python3
+          ansible_user=ubuntu
+          gcp_project_id=$(echo "$INV_JSON" | jq -r .gcp_project_id)
+          cf_client_id=$(echo "$INV_JSON" | jq -r .cf_id)
+          cf_client_secret=$(echo "$INV_JSON" | jq -r .cf_secret)
+          aws_ip=$AWS_IP
+          gcp_ip=$GCP_IP
+          gcp_internal_ip=$(echo "$INV_JSON" | jq -r .gcp_internal_ip)
+          gcp_mon_ip=$GCP_MON_IP
+          app_domain=$(echo "$INV_JSON" | jq -r .app_domain)
+          grafana_domain=$(echo "$INV_JSON" | jq -r .grafana_domain)
+          prometheus_domain=$(echo "$INV_JSON" | jq -r .prometheus_domain)
+          db_instance_name=$(echo "$INV_JSON" | jq -r .db_connection)
+          webhook_id=$WEBHOOK_ID
+          EOF
+
+      - name: Install Ansible and Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ansible
+          ansible-galaxy collection install -r infra/ansible/requirements.yml
+
+      - name: Create Vault Password File
+        run: |
+          echo "${{ secrets.VAULT_PASSWORD }}" > ${{ env.ANSIBLE_VAULT_PASSWORD_FILE }}
+          chmod 600 ${{ env.ANSIBLE_VAULT_PASSWORD_FILE }}
+
+      - name: Run Ansible Playbook
+        working-directory: infra/ansible
+        run: |
+          ansible-playbook -i inventory.ini playbook.yml \
+            --extra-vars "gcp_db_sa_path=${{ github.workspace }}/shared-data/db_sa_key.json" \
+            --extra-vars "project_name=${{ secrets.PROJECT_NAME }}" \
+            --extra-vars "deploy_env=${{ secrets.ENVIRONMENT }}" \
+            --extra-vars "dockerhub_username=${{ secrets.DOCKERHUB_USERNAME }}" \
+            --extra-vars "dockerhub_token=${{ secrets.DOCKERHUB_TOKEN }}" \
+            --extra-vars "dockerhub_repo=${{ secrets.DOCKERHUB_REPO }}" \
+            --extra-vars "dockerhub_repo_bot=${{ secrets.DOCKERHUB_REPO_BOT }}" \
+            --extra-vars "gemini_api_key=${{ secrets.GEMINI_API_KEY }}" \
+            --extra-vars "discord_bot_token=${{ secrets.DISCORD_BOT_TOKEN }}" \
+            --extra-vars "discord_channel_id=${{ secrets.DISCORD_CHANNEL_ID }}" \
+            --extra-vars "alert_webhook_url=${{ secrets.DISCORD_WEBHOOK_URL }}" \
+            --extra-vars "cf_api_token=${{ secrets.CF_API_TOKEN }}" \
+            --extra-vars "cf_account_id=${{ secrets.CF_ACCOUNT_ID }}" \
+            --extra-vars "gcp_db_password=${{ secrets.GCP_DB_PASSWORD }}" \
+            --extra-vars "@group_vars/vault.yml"
+
+      - name: Cleanup Vault Password File
+        if: always()
+        run: rm -f ${{ env.ANSIBLE_VAULT_PASSWORD_FILE }}

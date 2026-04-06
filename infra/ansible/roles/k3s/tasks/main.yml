@@ -1,24 +1,30 @@
 ---
-- name: K3s 설치 여부 확인
+# 1. K3s 설치 및 서비스 활성화
+- name: Check if k3s is installed
   command: which k3s
   register: k3s_installed
-  failed_when: false      # ignore_errors 대신 사용하여 불필요한 빨간색 에러 로그 방지
+  failed_when: false
   changed_when: false
 
-- name: K3s 설치
+- name: Install k3s
   shell: |
     curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server" sh -
   when: k3s_installed.rc != 0
 
-- name: K3s 서비스 시작 및 활성화
+- name: Start and enable k3s service
   ansible.builtin.systemd:
     name: k3s
     state: started
     enabled: yes
 
-- name: Install kube-state-metrics
-  ansible.builtin.shell: |
-    kubectl apply -k https://github.com/kubernetes/kube-state-metrics/examples/standard
+# 2. [완성형] Kube-state-metrics 배포 (Raw 파일 직접 설치)
+- name: Deploy kube-state-metrics
+  shell: |
+    BASE_URL="https://raw.githubusercontent.com/kubernetes/kube-state-metrics/v2.10.0/examples/standard"
+    for file in service-account.yaml cluster-role.yaml cluster-role-binding.yaml service.yaml deployment.yaml; do
+      kubectl apply -f ${BASE_URL}/${file}
+    done
+    
     kubectl delete svc kube-state-metrics -n kube-system --ignore-not-found
     kubectl apply -f - <<EOF
     apiVersion: v1
@@ -37,61 +43,94 @@
     EOF
   environment:
     KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-  changed_when: false
   when: inventory_hostname in ['gcp-main', 'aws-sub']
+  register: ksm_deploy_result
+  failed_when: ksm_deploy_result.rc != 0
 
-
-- name: Set kubeconfig permissions
-  ansible.builtin.file:
-    path: /etc/rancher/k3s/k3s.yaml
-    mode: '0644'
-  become: yes
+- name: Wait for KSM Deployment
+  shell: "kubectl wait --for=condition=available deployment/kube-state-metrics -n kube-system --timeout=120s"
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
   when: inventory_hostname in ['gcp-main', 'aws-sub']
-
-
-- name: Register KUBECONFIG env var
-  ansible.builtin.lineinfile:
-    path: /etc/environment
-    line: 'KUBECONFIG=/etc/rancher/k3s/k3s.yaml'
-
-- name: Wait for nodes to be Ready
-  ansible.builtin.command: k3s kubectl wait --for=condition=Ready node --all --timeout=60s
-  retries: 5
-  delay: 10
   changed_when: false
 
+# 3. AWS 전용: 영구 서비스 계정 및 토큰 생성 (Bot 접근용)
+- name: Create Bot Admin for AWS
+  shell: |
+    kubectl apply -f - <<EOF
+    apiVersion: v1
+    kind: ServiceAccount
+    metadata:
+      name: bot-admin
+      namespace: kube-system
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRoleBinding
+    metadata:
+      name: bot-admin-binding
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: ClusterRole
+      name: cluster-admin
+    subjects:
+    - kind: ServiceAccount
+      name: bot-admin
+      namespace: kube-system
+    ---
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: bot-admin-token
+      namespace: kube-system
+      annotations:
+        kubernetes.io/service-account.name: bot-admin
+    type: kubernetes.io/service-account-token
+    EOF
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  when: inventory_hostname == 'aws-sub'
 
-- name: Ensure local configs directory exists
-  delegate_to: localhost
-  ansible.builtin.file:
-    path: "{{ playbook_dir }}/configs"
-    state: directory
-    mode: '0755'
-  run_once: true
-  become: false
+- name: Get AWS Bot Token
+  shell: "kubectl get secret bot-admin-token -n kube-system -o jsonpath='{.data.token}' | base64 -d"
+  register: aws_bot_token_raw
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  when: inventory_hostname == 'aws-sub'
+  changed_when: false
 
-
-- name: Fetch kubeconfig from K3s masters
-  ansible.builtin.fetch:
+# 4. Kubeconfig 정보 추출 및 외부용 변환 (핵심 보완)
+- name: Slurp kubeconfig from master
+  ansible.builtin.slurp:
     src: /etc/rancher/k3s/k3s.yaml
-    dest: "{{ playbook_dir }}/configs/kubeconfig-{{ inventory_hostname }}.yaml"
-    flat: yes
+  register: k3s_config_encoded
   become: yes
   when: inventory_hostname in ['gcp-main', 'aws-sub']
 
-- name: Update server address in local kubeconfig
-  delegate_to: localhost
-  ansible.builtin.replace:
-    path: "{{ playbook_dir }}/configs/kubeconfig-{{ inventory_hostname }}.yaml"
-    regexp: 'https://127.0.0.1:6443'
-    replace: "https://{{ ansible_host }}:6443"
-  become: false
+- name: Set GCP Kubeconfig Fact
+  set_fact:
+    generated_kubeconfig: "{{ k3s_config_encoded.content | b64decode | regex_replace('https://127.0.0.1:6443', 'https://' + gcp_internal_ip + ':6443') }}"
+  when: inventory_hostname == 'gcp-main'
+
+# 4. Kubeconfig 정보 생성 (Jinja2 템플릿 방식)
+- name: Generate AWS Kubeconfig from template
+  set_fact:
+    generated_kubeconfig: "{{ lookup('template', 'kubeconfig_aws.j2') }}"
+  vars:
+    # 템플릿 안의 변수({{ aws_k8s_url }}, {{ aws_bot_token }})와 매핑됩니다.
+    aws_k8s_url: "https://aws-k8s.bucheongoyangijanggun.com"
+    aws_bot_token: "{{ aws_bot_token_raw.stdout }}"
+  when: inventory_hostname == 'aws-sub'
+
+- name: Display Kubeconfig for GHA Capture
+  ansible.builtin.debug:
+    msg: "KUBECONFIG_CONTENT_{{ inventory_hostname }}:{{ generated_kubeconfig | regex_replace('\\n', '___NEWLINE___') }}"
   when: inventory_hostname in ['gcp-main', 'aws-sub']
 
-- name: Set local kubeconfig permissions
-  delegate_to: localhost
+# 5. 원격 서버 로컬용 심볼릭 링크 유지
+- name: Symlink k3s config for local use
   ansible.builtin.file:
-    path: "{{ playbook_dir }}/configs/kubeconfig-{{ inventory_hostname }}.yaml"
-    mode: '0600'
-  become: false
+    src: /etc/rancher/k3s/k3s.yaml
+    dest: ~/.kube/config
+    state: link
+    force: yes
   when: inventory_hostname in ['gcp-main', 'aws-sub']

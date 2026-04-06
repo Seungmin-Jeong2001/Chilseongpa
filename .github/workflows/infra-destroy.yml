@@ -1,0 +1,56 @@
+name: Infrastructure Destroy (Manual)
+
+on:
+  workflow_dispatch:
+    inputs: # 주석 해제하여 입력 가능하게 수정
+      confirm:
+        description: "삭제를 확정하려면 'destroy'를 입력하세요"
+        required: true
+        default: 'none' 
+
+jobs:
+  terraform-destroy:
+    name: Terraform Destroy
+    # 입력값이 'destroy'일 때만 실행
+    if: github.event.inputs.confirm == 'destroy'
+    runs-on: ubuntu-latest
+    env:
+      TF_VAR_project_name: ${{ secrets.PROJECT_NAME }}
+      TF_VAR_environment: ${{ secrets.ENVIRONMENT }}
+      TF_VAR_gcp_project_id: ${{ secrets.GCP_PROJECT_ID }}
+      TF_VAR_gcp_region: ${{ secrets.GCP_REGION }} 
+      TF_VAR_gcp_db_password: ${{ secrets.GCP_DB_PASSWORD }}
+      TF_VAR_gcp_credentials: "${{ github.workspace }}/infra/terraform/gcp-creds.json"
+      TF_VAR_gcp_ssh_public_key: ${{ secrets.SSH_GCP_KEY_PUB }}
+      TF_VAR_cf_api_token: ${{ secrets.CF_API_TOKEN }}
+      TF_VAR_cf_account_id: ${{ secrets.CF_ACCOUNT_ID }}
+      TF_VAR_cf_zone_id: ${{ secrets.CF_ZONE_ID }}
+      TF_VAR_cf_tunnel_secret: ${{ secrets.CF_TUNNEL_SECRET }}
+      TF_VAR_key_name: ${{ secrets.AWS_KEY_NAME }}
+      TF_VAR_aws_region: ${{ secrets.AWS_REGION }}
+
+      GOOGLE_APPLICATION_CREDENTIALS: "${{ github.workspace }}/infra/terraform/gcp-creds.json"
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v5
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+
+      - name: Prepare GCP Credentials
+        # 경로가 TF_VAR_gcp_credentials 및 GOOGLE_APPLICATION_CREDENTIALS와 일치하는지 확인
+        run: echo '${{ secrets.GCP_CREDENTIALS }}' > infra/terraform/gcp-creds.json
+
+      - name: Terraform Init
+        working-directory: infra/terraform
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.PROJECT_NAME }}-tfstate" \
+            -backend-config="prefix=terraform/state"
+
+      - name: Terraform Destroy
+        working-directory: infra/terraform
+        run: terraform destroy -auto-approve -no-color

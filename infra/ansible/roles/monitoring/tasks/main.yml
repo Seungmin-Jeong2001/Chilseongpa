@@ -1,235 +1,175 @@
-- name: Create Prometheus data dir (EBS)
+---
+# 1. 스토리지 및 디렉토리 준비
+- name: Create Prometheus/Grafana data dirs (EBS)
   ansible.builtin.file:
-    path: /var/lib/prometheus
+    path: "{{ item.path }}"
     state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
     mode: '0755'
+  loop:
+    - { path: "/var/lib/prometheus", owner: "65534", group: "65534" }
+    - { path: "/var/lib/grafana", owner: "472", group: "472" }
   when: storage_setup_enabled | bool
 
-- name: Create Grafana data dir (EBS)
+- name: Create Prometheus/Grafana data dirs (Local)
   ansible.builtin.file:
-    path: /var/lib/grafana
+    path: "{{ monitoring_base_dir }}/data/{{ item.name }}"
     state: directory
+    owner: "{{ item.id }}"
+    group: "{{ item.id }}"
     mode: '0755'
-  when: storage_setup_enabled | bool
-
-- name: Create Prometheus data dir (local)
-  ansible.builtin.file:
-    path: "{{ monitoring_base_dir }}/data/prometheus"
-    state: directory
-    owner: "65534"
-    group: "65534"
-    mode: '0755'
+  loop:
+    - { name: "prometheus", id: "65534" }
+    - { name: "grafana", id: "472" }
   when: not (storage_setup_enabled | bool)
 
-- name: Create Grafana data dir (local)
-  ansible.builtin.file:
-    path: "{{ monitoring_base_dir }}/data/grafana"
-    state: directory
-    owner: "472"
-    group: "472"
-    mode: '0755'
-  when: not (storage_setup_enabled | bool)
-
-- name: Get UUID
+# 2. EBS 볼륨 마운트 (기존 로직 유지)
+- name: Get EBS UUID
   ansible.builtin.command: blkid -s UUID -o value {{ ebs_device_name }}
   register: monitoring_disk_uuid
   failed_when: false
   changed_when: false
   when: storage_setup_enabled | bool
 
-- name: Format EBS volume
-  community.general.filesystem:
-    fstype: ext4
-    dev: "{{ ebs_device_name }}"  # 변수 기반 장치명 사용
-    force: false
-  when:
-    - storage_setup_enabled | bool
-    - monitoring_disk_uuid.stdout == ""    # 포맷되지 않은 경우만 수행
+- name: Format and Mount EBS
+  block:
+    - name: Format EBS volume
+      community.general.filesystem:
+        fstype: ext4
+        dev: "{{ ebs_device_name }}"
+        force: false
+      when: monitoring_disk_uuid.stdout == ""
 
-- name: Get UUID after format
-  ansible.builtin.command: blkid -s UUID -o value {{ ebs_device_name }}
-  register: monitoring_disk_uuid             # 포맷 후 UUID 재조회
-  changed_when: false
+    - name: Get UUID after format
+      ansible.builtin.command: blkid -s UUID -o value {{ ebs_device_name }}
+      register: monitoring_disk_uuid_after
+      changed_when: false
+
+    - name: Mount EBS volume
+      ansible.posix.mount:
+        path: /var/lib/prometheus
+        src: "UUID={{ monitoring_disk_uuid_after.stdout | default(monitoring_disk_uuid.stdout) }}"
+        fstype: ext4
+        state: mounted
+
+    - name: Set permissions for mounted volumes
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: '0755'
+        recurse: true
+      loop:
+        - { path: "/var/lib/prometheus", owner: "65534", group: "65534" }
+        - { path: "/var/lib/grafana", owner: "472", group: "472" }
   when: storage_setup_enabled | bool
 
-- name: Mount EBS volume
-  ansible.posix.mount:
-    path: /var/lib/prometheus
-    src: "UUID={{ monitoring_disk_uuid.stdout }}"
-    fstype: ext4
-    state: mounted                # /etc/fstab 등록 + 즉시 마운트
-  when: storage_setup_enabled | bool
-
-- name: Set permissions for Prometheus data dir
+# 3. 설정 파일 렌더링 및 배포
+- name: Ensure config directories exist
   ansible.builtin.file:
-    path: /var/lib/prometheus
-    owner: "65534"                # Prometheus 컨테이너 기본 UID
-    group: "65534"
-    mode: '0755'
-    recurse: true
-  when: storage_setup_enabled | bool
-
-- name: Set permissions for Grafana data dir
-  ansible.builtin.file:
-    path: /var/lib/grafana
-    owner: "472"                  # Grafana 컨테이너 기본 UID
-    group: "472"
-    mode: '0755'
-    recurse: true
-  when: storage_setup_enabled | bool
-
-- name: Create monitoring directory
-  ansible.builtin.file:
-    path: "{{ monitoring_base_dir }}"
+    path: "{{ item }}"
     state: directory
-    owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
     mode: '0755'
+  loop:
+    - "{{ monitoring_base_dir }}/configs"
+    - "{{ monitoring_base_dir }}/grafana/provisioning/datasources"
+    - "{{ monitoring_base_dir }}/grafana/provisioning/dashboards"
 
-# ---------------------------------------------------------
-# [추가] Kubeconfig 저장을 위한 디렉토리 생성 및 배달
-# ---------------------------------------------------------
-- name: Ensure configs directory exists
+- name: Render Monitoring Templates (.j2)
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ monitoring_base_dir }}/{{ item.dest }}"
+    mode: '0644'
+  loop:
+    - { src: "prometheus.yml.j2", dest: "prometheus.yml" }
+    - { src: "alertmanager.yml.j2", dest: "alertmanager.yml" }
+    - { src: "alert.rules.yml.j2", dest: "alert.rules.yml" }
+    - { src: "docker-compose.yml.j2", dest: "docker-compose.yml" }
+    - { src: "datasource.yml.j2", dest: "grafana/provisioning/datasources/datasource.yml" }
+    - { src: "dashboard.yml.j2", dest: "grafana/provisioning/dashboards/dashboard.yml" }
+
+- name: Create Kubeconfig and Secrets directory
   ansible.builtin.file:
-    path: "{{ monitoring_base_dir }}/configs"
+    path: "{{ item }}"
     state: directory
-    owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
     mode: '0755'
+  loop:
+    - "{{ monitoring_base_dir }}/configs"
 
-- name: Delivery kubeconfigs to Monitoring VM
+- name: Create Kubeconfig files from variables
   ansible.builtin.copy:
-    src: "./configs/kubeconfig-{{ item }}.yaml"
-    dest: "{{ monitoring_base_dir }}/configs/kubeconfig-{{ item }}.yaml"
+    content: "{{ item.content }}"
+    dest: "{{ monitoring_base_dir }}/configs/{{ item.name }}"
     mode: '0600'
   loop:
-    - gcp-main
-    - aws-sub
-  # 💡 인벤토리의 gcp-monitor 호스트에서만 실행되도록 보장
-  when: inventory_hostname == 'gcp-monitor'
-  
-- name: Render Prometheus config from template
-  ansible.builtin.template:
-    src: "{{ prometheus_config_src }}"
-    dest: "{{ monitoring_base_dir }}/prometheus.yml"
-    mode: '0644'
-  when: config_render_mode == "template"
-  notify: Reload Prometheus       # 설정 변경 시 무중단 reload
+    - { name: "kubeconfig-gcp-main.yaml", content: "{{ hostvars['gcp-main']['generated_kubeconfig'] | default('') }}" }
+    - { name: "kubeconfig-aws-sub.yaml", content: "{{ hostvars['aws-sub']['generated_kubeconfig'] | default('') }}" }
+  when: item.content != ""
 
-- name: Copy Prometheus config from file
+# 💡 [수정] tree 구조에 맞춰 단일 dashboard.json 파일을 복사합니다.
+- name: Copy Grafana Dashboard JSON
   ansible.builtin.copy:
-    src: "{{ prometheus_config_src }}"
-    dest: "{{ monitoring_base_dir }}/prometheus.yml"
-    mode: '0644'
-  when: config_render_mode == "copy"
-  notify: Reload Prometheus
-
-- name: Render Alertmanager config
-  ansible.builtin.template:
-    src: "{{ alertmanager_config_src }}"
-    dest: "{{ monitoring_base_dir }}/alertmanager.yml"
-    mode: '0644'
-  notify: Reload Alertmanager
-
-- name: Render Alert Rules
-  ansible.builtin.template:
-    src: "{{ alert_rules_src }}"
-    dest: "{{ monitoring_base_dir }}/alert.rules.yml"
-    mode: '0644'
-  notify: Reload Prometheus
-
-- name: Render docker-compose
-  ansible.builtin.template:
-    src: docker-compose.yml.j2
-    dest: "{{ monitoring_base_dir }}/docker-compose.yml"
-    mode: '0644'
-
-- name: Create Grafana provisioning directories
-  ansible.builtin.file:
-    path: "{{ monitoring_base_dir }}/grafana/provisioning/{{ item }}"
-    state: directory
-    mode: '0755'
-  loop:
-    - datasources                 # datasource provisioning 경로
-    - dashboards                  # dashboard provider 경로
-    
-- name: Render Grafana datasource config from template
-  ansible.builtin.template:
-    src: "{{ grafana_datasource_src }}"
-    dest: "{{ monitoring_base_dir }}/grafana/provisioning/datasources/datasource.yml"
-    mode: '0644'
-  when: config_render_mode == "template"
-
-- name: Copy Grafana datasource config from file
-  ansible.builtin.copy:
-    src: "{{ grafana_datasource_src }}"
-    dest: "{{ monitoring_base_dir }}/grafana/provisioning/datasources/datasource.yml"
-    mode: '0644'
-  when: config_render_mode == "copy"
-
-- name: Render Grafana dashboard provider config from template
-  ansible.builtin.template:
-    src: "{{ grafana_dashboard_provider_src }}"
-    dest: "{{ monitoring_base_dir }}/grafana/provisioning/dashboards/dashboard.yml"
-    mode: '0644'
-  when: config_render_mode == "template"
-
-- name: Copy Grafana dashboard provider config from file
-  ansible.builtin.copy:
-    src: "{{ grafana_dashboard_provider_src }}"
-    dest: "{{ monitoring_base_dir }}/grafana/provisioning/dashboards/dashboard.yml"
-    mode: '0644'
-  when: config_render_mode == "copy"
-
-# [수정] dashboard.json 배포 task 추가
-# 기존에 datasource.yml, dashboard.yml(provider)만 복사하고
-# 실제 대시보드 JSON을 복사하는 task가 없어 Grafana에 대시보드가 로드되지 않는 문제
-- name: Copy Grafana dashboard JSON
-  ansible.builtin.copy:
-    src: dashboard.json
+    src: "dashboard.json"
     dest: "{{ monitoring_base_dir }}/grafana/provisioning/dashboards/dashboard.json"
+    owner: "472"
+    group: "472"
     mode: '0644'
 
-- name: Check docker CLI
-  ansible.builtin.command: docker --version
-  changed_when: false            # 상태 조회만 수행하므로 changed 처리하지 않음
+# 💡 [핵심 보완] 디렉토리/파일 충돌 방지 및 GCP SA Key 생성
+- name: Force remove gcp-sa-key path to prevent directory/file conflict
+  ansible.builtin.file:
+    path: "/home/ubuntu/gcp-sa-key.json"
+    state: absent
+  when: gcp_db_sa_path is defined
 
-- name: Check docker compose plugin
-  ansible.builtin.command: docker compose version
-  changed_when: false            # Compose Plugin 설치 여부 확인용 조회 명령
-
-# Cloud SQL Auth Proxy 설치 및 실행
-- name: Download Cloud SQL Auth Proxy binary
-  ansible.builtin.get_url:
-    url: https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.11.0/cloud-sql-proxy.linux.amd64
-    dest: /usr/local/bin/cloud-sql-proxy
-    mode: '0755'
-
-# [수정] docker compose up 이전으로 이동
-# stackdriver-exporter가 컨테이너 시작 시 SA 키를 마운트하므로,
-# 파일이 없으면 Docker가 해당 경로를 디렉토리로 생성해 credentials 읽기 실패
-- name: Copy GCP Service Account Key
+- name: Create GCP DB SA Key file from Artifact path
   ansible.builtin.copy:
-    src: gcp-sa-key.json
-    dest: /home/ubuntu/gcp-sa-key.json
+    content: "{{ lookup('file', gcp_db_sa_path) }}"
+    dest: "/home/ubuntu/gcp-sa-key.json"
+    owner: ubuntu
+    group: ubuntu
     mode: '0644'
+  when: gcp_db_sa_path is defined
 
+# 4. 이미지 사전 풀링
+- name: Pre-pull monitoring images sequentially
+  community.docker.docker_image:
+    name: "{{ item }}"
+    source: pull
+  loop:
+    - prom/prometheus:latest
+    - grafana/grafana:latest
+    - prom/alertmanager:latest
+    - prometheuscommunity/stackdriver-exporter:latest
+    - jeongseungmin/chilseongpa-bot_dockerhub:latest
+  register: img_pull_result
+  until: img_pull_result is succeeded
+  retries: 5
+  delay: 10
+
+# 5. 스택 실행
 - name: Start monitoring stack
   community.docker.docker_compose_v2:
-    project_src: "{{ monitoring_base_dir }}" # docker-compose.yml이 위치한 디렉토리
-    state: present               # docker compose up과 동일하게 서비스 생성/실행
-    pull: always                # 이미지가 최신인지 항상 확인하여 pull 수행
+    project_src: "{{ monitoring_base_dir }}"
+    state: present
+    pull: missing
 
 
-- name: Run Cloud SQL Auth Proxy
-  ansible.builtin.shell: |
-    # 💡 기존 프로세스가 있다면 죽이고 새로 띄웁니다 (설정 변경 반영)
-    pkill cloud-sql-proxy || true
-    # [수정] --prometheus --http-address --http-port 제거 - 메트릭은 stackdriver-exporter가 담당
-    nohup /usr/local/bin/cloud-sql-proxy \
-      --address 0.0.0.0 \
-      --port 9255 \
-      --credentials-file /home/ubuntu/gcp-sa-key.json \
-      {{ db_instance_name }} > /dev/null 2>&1 &
-  changed_when: false
-
+# 6. 호스트용 Cloud SQL Auth Proxy 실행
+- name: Cloud SQL Auth Proxy Setup (Host-level)
+  block:
+    - name: Download Proxy
+      ansible.builtin.get_url:
+        url: https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.11.0/cloud-sql-proxy.linux.amd64
+        dest: /usr/local/bin/cloud-sql-proxy
+        mode: '0755'
+    
+    - name: Run Proxy on port 3307
+      ansible.builtin.shell: |
+        pkill cloud-sql-proxy || true
+        nohup /usr/local/bin/cloud-sql-proxy \
+          --address 0.0.0.0 --port 3307 \
+          --credentials-file /home/ubuntu/gcp-sa-key.json \
+          {{ db_instance_name }} > /dev/null 2>&1 &
+      changed_when: false

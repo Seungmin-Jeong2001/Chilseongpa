@@ -4,6 +4,8 @@
 terraform {
   required_version = ">= 1.5.0"
 
+  backend "gcs" {}
+
   required_providers {
     aws        = { source = "hashicorp/aws", version = "~> 5.0" }
     google     = { source = "hashicorp/google", version = "~> 5.0" }
@@ -43,6 +45,7 @@ module "cloudflare" {
   app_domain            = var.app_domain
   grafana_domain        = var.grafana_domain
   prometheus_domain     = var.prometheus_domain
+  cf_discord_webhook_url = var.cf_discord_webhook_url
 }
 
 # -------------------------------------------------------------------
