@@ -201,29 +201,30 @@ async def dashboard(interaction: discord.Interaction):
 # 5. Webhook & Alert 처리
 # ---------------------------------------------------------
 async def process_alert(status, summary, description):
-    # 💡 1. 봇이 준비될 때까지 기다립니다. (기동 직후 알림 대비)
-    await bot.wait_until_ready()
+    print(f"🔔 [Alert] process_alert 진입: {summary} ({status})") # 👈 로그 추가
     
-    # 💡 2. get_channel(캐시) 대신 fetch_channel(직접 조회)을 시도합니다.
+    await bot.wait_until_ready()
+    print(f"📡 [Alert] 봇 Ready 완료, 채널 {CHANNEL_ID} 조회 시작") # 👈 로그 추가
+
     channel = bot.get_channel(CHANNEL_ID)
     if not channel:
+        print(f"❌ [Error] 채널을 못 찾음! ID를 확인하세요: {CHANNEL_ID}") # 👈 원인 파악용
         try:
             channel = await bot.fetch_channel(CHANNEL_ID)
+            print("✅ [Info] fetch_channel로 채널 확보 성공")
         except Exception as e:
-            print(f"❌ [Error] 채널 ID {CHANNEL_ID}를 찾을 수 없습니다: {e}")
+            print(f"❌ [Critical] fetch_channel도 실패: {e}")
             return
 
-    print(f"🔔 [Alert] 메시지 전송 시도: {summary}")
-    
     color = discord.Color.red() if status == 'FIRING' else discord.Color.green()
     embed = discord.Embed(title=f"[{status}] {summary}", description=description[:1000], color=color)
     view = LogAnalysisView("Alertmanager", summary, description)
-    
+
     try:
         await channel.send(embed=embed, view=view)
-        print(f"✅ [Success] {summary} 알림 전송 완료!")
+        print(f"🚀 [Success] 디스코드 전송 완료: {summary}") # 👈 로그 추가
     except Exception as e:
-        print(f"❌ [Error] 메시지 전송 실패: {e}")
+        print(f"❌ [Error] 메시지 전송 중 예외 발생: {e}")
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
