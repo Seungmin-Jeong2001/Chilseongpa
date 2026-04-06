@@ -1,12 +1,12 @@
 name: Infrastructure Provision & App Deploy
 
 on:
-  push:
-    branches: [ main ]
-    paths:
-      - 'infra/**'
-      - 'application/**'
-      - '.github/workflows/infra-deploy.yml'
+  # push:
+  #   branches: [ main ]
+  #   paths:
+  #     - 'infra/**'
+  #     - 'application/**'
+  #     - '.github/workflows/infra-deploy.yml'
   workflow_dispatch: 
 
 concurrency:
