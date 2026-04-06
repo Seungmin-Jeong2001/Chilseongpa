@@ -155,30 +155,6 @@
     state: present
     pull: missing
 
-- name: 봇 엔드포인트(/cloudflare-alert) 활성화 대기
-  uri:
-    url: "https://bot-webhook.bucheongoyangijanggun.com/cloudflare-alert"
-    method: GET # 봇 코드에서 GET도 405나 200을 뱉게 되어있어야 함
-    status_code: [200, 405] 
-  register: bot_ready
-  until: bot_ready.status in [200, 405]
-  retries: 12
-  delay: 5
-
-- name: 클라우드플레어 알림 대상을 봇 API로 변경
-  uri:
-    # {{ webhook_id }}는 테라폼 output으로 뽑거나 API로 조회해서 가져옴
-    url: "https://api.cloudflare.com/client/v4/accounts/{{ cf_account_id }}/alerting/v3/destinations/webhooks/{{ webhook_id }}"
-    method: PUT
-    headers:
-      Authorization: "Bearer {{ cf_api_token }}"
-      Content-Type: "application/json"
-    body_format: json
-    body:
-      name: "Chilseongpa-Bot-Webhook"
-      url: "https://bot-webhook.bucheongoyangijanggun.com/cloudflare-alert" # ✅ 봇 주소로 최종 교체!
-  when: bot_ready.status in [200, 405]
-
 
 # 6. 호스트용 Cloud SQL Auth Proxy 실행
 - name: Cloud SQL Auth Proxy Setup (Host-level)
