@@ -10,8 +10,6 @@ from discord import app_commands
 from flask import Flask, request
 from threading import Thread
 
-app = Flask(__name__)
-
 # ---------------------------------------------------------
 # 1. 환경변수 및 설정 로드
 # ---------------------------------------------------------
@@ -19,7 +17,7 @@ TOKEN = os.getenv('DISCORD_BOT_TOKEN')
 CHANNEL_ID = int(os.getenv('DISCORD_CHANNEL_ID', '0'))
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
-# 그라파나 및 프로메테우스 설정
+# 대시보드 및 프로메테우스 URL
 GRAFANA_URL = os.getenv('GRAFANA_URL', 'https://grafana.bucheongoyangijanggun.com')
 PROMETHEUS_URL = "http://prometheus:9090"
 
@@ -29,9 +27,11 @@ KUBE_CONFIGS = {
     "aws": os.getenv('KUBECONFIG_AWS', '/root/.kube/config-aws')
 }
 
-# 최신 Gemini AI SDK 설정 (google-genai)
+# 최신 Gemini AI SDK 설정
 client = genai.Client(api_key=GEMINI_API_KEY)
-MODEL_ID = "gemini-2.5-flash"
+MODEL_ID = "gemini-2.0-flash" # 혹은 정님이 사용하시는 모델 ID
+
+app = Flask(__name__)
 
 # ---------------------------------------------------------
 # 2. 공통 유틸리티 함수
@@ -56,18 +56,13 @@ async def run_shell(command):
 
 async def send_smart_message(interaction, header, content, filename="result.txt"):
     """디스코드 2,000자 제한을 고려하여 전송 방식을 결정합니다."""
-    # 1. 헤더 포함 2,000자 이하: 즉시 전송
     if len(header) + len(content) + 10 <= 2000:
         await interaction.followup.send(f"{header}\n```text\n{content}```")
-    
-    # 2. 2,000자 초과 ~ 4,000자 이하: 메시지 분할 전송
     elif len(content) <= 4000:
         await interaction.followup.send(f"{header} (내용이 길어 나누어 전송합니다.)")
         chunks = [content[i:i+1900] for i in range(0, len(content), 1900)]
         for chunk in chunks:
             await interaction.followup.send(f"```text\n{chunk}```")
-            
-    # 3. 4,000자 초과: 파일로 변환하여 전송
     else:
         with io.BytesIO(content.encode('utf-8')) as f:
             file = discord.File(f, filename=filename)
@@ -99,14 +94,14 @@ class LogAnalysisView(discord.ui.View):
     @discord.ui.button(label="🔍 Gemini SRE 지능형 진단", style=discord.ButtonStyle.primary, custom_id="analyze_k8s_logs")
     async def analyze_logs(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
-        status_msg = await interaction.followup.send("🤖 **Gemini SRE가 원인을 분석 중입니다...** ⏳")
+        await interaction.followup.send("🤖 **Gemini SRE가 원인을 분석 중입니다...** ⏳")
 
         prompt = f"""
         당신은 하이브리드 클라우드(AWS/GCP) 전문가 SRE입니다. 
-        '{self.cluster_name}' 환경의 '{self.pod_name}' 로그를 분석하고 다음을 한국어로 답변하세요:
+        '{self.cluster_name}' 환경의 '{self.pod_name}' 로그/이벤트를 분석하고 다음을 한국어로 답변하세요:
         1. 원인 분석, 2. 조치 명령어(kubectl), 3. 재발 방지책.
         
-        [로그 데이터]
+        [데이터]
         {self.log_content}
         """
 
@@ -114,7 +109,6 @@ class LogAnalysisView(discord.ui.View):
             ai_text = await generate_content_with_retry(prompt)
             header = f"🤖 **Gemini SRE 진단 리포트 ({self.pod_name})**"
             
-            # AI 리포트 분할 전송 (가독성 우선)
             if len(ai_text) <= 1900:
                 await interaction.followup.send(f"{header}\n{ai_text}")
             else:
@@ -135,7 +129,7 @@ class ChilseongpaBot(discord.Client):
 
     async def setup_hook(self):
         await self.tree.sync()
-        print("🚀 [System] K8s 하이브리드 관제 시스템 기동 완료")
+        print("🚀 [System] Chilseongpa AIOps 시스템 기동 완료")
 
 bot = ChilseongpaBot()
 
@@ -166,18 +160,17 @@ async def k8s_ps(interaction: discord.Interaction, cluster: app_commands.Choice[
 async def k8s_logs(interaction: discord.Interaction, cluster: app_commands.Choice[str], pod_name: str, namespace: str = "default"):
     await interaction.response.defer()
     config = KUBE_CONFIGS.get(cluster.value)
-    # 💡 await 누락 수정 완료
-    logs = await run_shell(f"kubectl --kubeconfig={config} logs {pod_name} -n {namespace} --tail=20")
+    logs = await run_shell(f"kubectl --kubeconfig={config} logs {pod_name} -n {namespace} --tail=30")
     
     embed = discord.Embed(title=f"📋 로그 리포트: {pod_name}", color=discord.Color.orange())
     safe_logs = logs if len(logs) <= 1000 else f"...(중략)...\n{logs[-950:]}"
-    embed.add_field(name="최신 로그 (Tail 50)", value=f"```text\n{safe_logs}```")
+    embed.add_field(name="최신 로그 (Tail 30)", value=f"```text\n{safe_logs}```")
     
     view = LogAnalysisView(cluster.name, pod_name, logs)
     view.add_item(discord.ui.Button(label="📊 그라파나", url=GRAFANA_URL, style=discord.ButtonStyle.link))
     await interaction.followup.send(embed=embed, view=view)
 
-@bot.tree.command(name="health_danger", description="위험 부위 집중 진단")
+@bot.tree.command(name="health_danger", description="전체 클러스터 위험 부위 진단")
 async def health_danger(interaction: discord.Interaction):
     await interaction.response.defer()
     async with aiohttp.ClientSession() as session:
@@ -188,7 +181,7 @@ async def health_danger(interaction: discord.Interaction):
                 if not results:
                     await interaction.followup.send("✅ 모든 시스템이 정상(UP)입니다.")
                 else:
-                    msg = "⚠️ **위험 탐지 목록**\n" + "\n".join([f"- {r['metric'].get('job')}" for r in results])
+                    msg = "⚠️ **위험 탐지 목록**\n" + "\n".join([f"- {r['metric'].get('job')} ({r['metric'].get('cluster')})" for r in results])
                     await interaction.followup.send(msg)
         except Exception as e:
             await interaction.followup.send(f"❌ 조회 실패: {e}")
@@ -198,40 +191,40 @@ async def dashboard(interaction: discord.Interaction):
     await interaction.response.send_message(f"🚀 **Grafana:** {GRAFANA_URL}")
 
 # ---------------------------------------------------------
-# 5. Webhook & Alert 처리
+# 5. Webhook 처리 (Prometheus & Cloudflare)
 # ---------------------------------------------------------
-async def process_alert(status, summary, description):
-    print(f"🔔 [Alert] process_alert 진입: {summary} ({status})") # 👈 로그 추가
-    
-    await bot.wait_until_ready()
-    print(f"📡 [Alert] 봇 Ready 완료, 채널 {CHANNEL_ID} 조회 시작") # 👈 로그 추가
 
+async def process_alert(status, summary, description):
+    """Prometheus 알림 전송"""
+    await bot.wait_until_ready()
     channel = bot.get_channel(CHANNEL_ID)
-    if not channel:
-        print(f"❌ [Error] 채널을 못 찾음! ID를 확인하세요: {CHANNEL_ID}") # 👈 원인 파악용
-        try:
-            channel = await bot.fetch_channel(CHANNEL_ID)
-            print("✅ [Info] fetch_channel로 채널 확보 성공")
-        except Exception as e:
-            print(f"❌ [Critical] fetch_channel도 실패: {e}")
-            return
+    if not channel: channel = await bot.fetch_channel(CHANNEL_ID)
 
     color = discord.Color.red() if status == 'FIRING' else discord.Color.green()
     embed = discord.Embed(title=f"[{status}] {summary}", description=description[:1000], color=color)
     view = LogAnalysisView("Alertmanager", summary, description)
+    await channel.send(embed=embed, view=view)
 
-    try:
-        await channel.send(embed=embed, view=view)
-        print(f"🚀 [Success] 디스코드 전송 완료: {summary}") # 👈 로그 추가
-    except Exception as e:
-        print(f"❌ [Error] 메시지 전송 중 예외 발생: {e}")
+async def process_cloudflare_alert(data):
+    """Cloudflare LB 알림 전송"""
+    await bot.wait_until_ready()
+    channel = bot.get_channel(CHANNEL_ID)
+    if not channel: channel = await bot.fetch_channel(CHANNEL_ID)
+
+    text = data.get('text', '상태 변경 감지')
+    color = discord.Color.red() if "Unhealthy" in text else discord.Color.green()
+    
+    embed = discord.Embed(
+        title="🌐 [Cloudflare LB Alert] 외부 관제 신호",
+        description=text,
+        color=color
+    )
+    view = LogAnalysisView("Cloudflare LB", "Infrastructure", text)
+    await channel.send(embed=embed, view=view)
 
 @app.route('/webhook', methods=['POST'])
-def webhook():
+def prometheus_webhook():
     data = request.json
-    print("--- [RAW WEBHOOK DATA START] ---")
-    print(json.dumps(data, indent=2, ensure_ascii=False))
-    print("--- [RAW WEBHOOK DATA END] ---")
     loop = bot.loop
     for alert in data.get('alerts', []):
         status = alert.get('status', 'firing').upper()
@@ -240,9 +233,21 @@ def webhook():
         asyncio.run_coroutine_threadsafe(process_alert(status, summary, desc), loop)
     return "OK", 200
 
+@app.route('/cloudflare-alert', methods=['POST'])
+def cloudflare_webhook():
+    data = request.json
+    loop = bot.loop
+    asyncio.run_coroutine_threadsafe(process_cloudflare_alert(data), loop)
+    return "OK", 200
+
 def run_flask():
     app.run(host='0.0.0.0', port=5000)
 
+# ---------------------------------------------------------
+# 6. 메인 실행
+# ---------------------------------------------------------
 if __name__ == '__main__':
+    # Flask 서버를 별도 스레드에서 실행
     Thread(target=run_flask, daemon=True).start()
+    # 디스코드 봇 실행
     bot.run(TOKEN)

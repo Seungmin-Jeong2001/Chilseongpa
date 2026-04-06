@@ -43,7 +43,7 @@ resource "cloudflare_zero_trust_access_application" "apps" {
   type    = "self_hosted"
 }
 
-# [핵심] AWS K8s API 전용 앱 (Bypass 대상)
+# AWS K8s API 전용 앱 (Bypass 대상)
 resource "cloudflare_zero_trust_access_application" "aws_k8s_api" {
   zone_id = var.cf_zone_id
   name    = "AWS-K8s-API-Access"
@@ -55,7 +55,7 @@ resource "cloudflare_zero_trust_access_application" "aws_k8s_api" {
 resource "cloudflare_zero_trust_access_policy" "monitoring_policy" {
   for_each       = cloudflare_zero_trust_access_application.apps
   application_id = each.value.id
-  zone_id        = var.cf_zone_id
+  zone_id         = var.cf_zone_id
   name           = "Allow Prometheus Scraper"
   decision       = "non_identity"
   precedence     = 1
@@ -65,10 +65,10 @@ resource "cloudflare_zero_trust_access_policy" "monitoring_policy" {
   }
 }
 
-# [핵심] K8s API용 정책: Bypass (로그인 창 제거)
+# K8s API용 정책: Bypass
 resource "cloudflare_zero_trust_access_policy" "aws_k8s_bypass_policy" {
   application_id = cloudflare_zero_trust_access_application.aws_k8s_api.id
-  zone_id        = var.cf_zone_id
+  zone_id         = var.cf_zone_id
   name           = "Bypass for K8s API Auth"
   decision       = "bypass"
   precedence     = 1
@@ -79,7 +79,7 @@ resource "cloudflare_zero_trust_access_policy" "aws_k8s_bypass_policy" {
 }
 
 # -------------------------------------------------------------------
-# 2. Tunnel Config (인증서 무시 옵션 포함)
+# 2. Tunnel Config (봇 웹훅 경로 추가됨)
 # -------------------------------------------------------------------
 resource "cloudflare_zero_trust_tunnel_cloudflared_config" "configs" {
   for_each   = cloudflare_zero_trust_tunnel_cloudflared.tunnels
@@ -87,7 +87,7 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "configs" {
   tunnel_id  = each.value.id
 
   config {
-    # Monitoring 터널 (Grafana/Prometheus)
+    # Monitoring 터널 (Grafana/Prometheus/Bot Webhook)
     dynamic "ingress_rule" {
       for_each = each.key == "monitoring" ? [1] : []
       content {
@@ -100,6 +100,14 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "configs" {
       content {
         hostname = var.prometheus_domain
         service  = "http://localhost:9090"
+      }
+    }
+    # 💡 [추가] 봇 API용 인그레스 규칙
+    dynamic "ingress_rule" {
+      for_each = each.key == "monitoring" ? [1] : []
+      content {
+        hostname = "bot-webhook.bucheongoyangijanggun.com"
+        service  = "http://localhost:5000"
       }
     }
 
@@ -126,7 +134,7 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "configs" {
       }
     }
 
-    # AWS 터널 (K3s API 502 에러 해결 포인트)
+    # AWS 터널
     dynamic "ingress_rule" {
       for_each = each.key == "aws" ? [1] : []
       content {
@@ -153,14 +161,13 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "configs" {
       content {
         hostname = "aws-k8s.bucheongoyangijanggun.com"
         service  = "https://localhost:6443"
-        # 💡 K3s 자체 서명 인증서 무시 설정
         origin_request {
           no_tls_verify = true
         }
       }
     }
 
-    # 공통 앱 배포 규칙 (Load Balancer를 위해 모든 터널이 응답 대기)
+    # 공통 앱 배포 규칙
     ingress_rule {
       hostname = var.app_domain
       service  = "http://localhost:80"
@@ -173,12 +180,13 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "configs" {
 }
 
 # -------------------------------------------------------------------
-# 3. DNS 레코드 설정
+# 3. DNS 레코드 설정 (봇 웹훅 레코드 추가됨)
 # -------------------------------------------------------------------
 resource "cloudflare_record" "records" {
   for_each = {
     grafana     = { name = "grafana", tunnel = "monitoring" }
     prometheus  = { name = "prometheus", tunnel = "monitoring" }
+    bot-webhook = { name = "bot-webhook", tunnel = "monitoring" } # 💡 [추가]
     gcp-metrics = { name = "gcp-metrics", tunnel = "gcp" }
     gcp-app      = { name = "gcp-app", tunnel = "gcp" }
     gcp-ksm      = { name = "gcp-ksm", tunnel = "gcp" }
@@ -195,7 +203,7 @@ resource "cloudflare_record" "records" {
 }
 
 # -------------------------------------------------------------------
-# 4. Load Balancer 설정 (GCP/AWS 하이브리드 구성)
+# 4. Load Balancer 설정
 # -------------------------------------------------------------------
 resource "cloudflare_load_balancer_monitor" "monitor" {
   account_id     = var.cf_account_id
@@ -224,11 +232,36 @@ resource "cloudflare_load_balancer_pool" "pools" {
 
 resource "cloudflare_load_balancer" "lb" {
   zone_id = var.cf_zone_id
-  name    = var.app_domain # app.bucheongoyangijanggun.com
+  name    = var.app_domain
   default_pool_ids = [
     cloudflare_load_balancer_pool.pools["gcp"].id,
     cloudflare_load_balancer_pool.pools["aws"].id
   ]
   fallback_pool_id = cloudflare_load_balancer_pool.pools["aws"].id
   proxied = true
+}
+
+# -------------------------------------------------------------------
+# 5. [추가] 알림 정책 (Cloudflare LB -> Bot Webhook)
+# -------------------------------------------------------------------
+resource "cloudflare_notification_policy_webhooks" "bot_webhook" {
+  account_id = var.cf_account_id
+  name       = "Chilseongpa-Bot-Webhook"
+  # 봇 코드의 @app.route('/cloudflare-alert')와 일치
+  url        = "https://bot-webhook.bucheongoyangijanggun.com/cloudflare-alert"
+}
+
+resource "cloudflare_notification_policy" "lb_health_alert" {
+  account_id  = var.cf_account_id
+  name        = "LB Pool Health Alert"
+  description = "LB 풀 상태 변화 시 봇으로 알림 전송"
+  enabled     = true
+  alert_type  = "load_balancing_health_status"
+
+  webhooks_integration_ids = [cloudflare_notification_policy_webhooks.bot_webhook.id]
+
+  filters {
+    pool_id    = [for p in cloudflare_load_balancer_pool.pools : p.id]
+    new_health = ["Unhealthy", "Healthy"]
+  }
 }
