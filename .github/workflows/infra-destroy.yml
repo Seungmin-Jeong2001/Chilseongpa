@@ -28,6 +28,7 @@ jobs:
       TF_VAR_cf_tunnel_secret: ${{ secrets.CF_TUNNEL_SECRET }}
       TF_VAR_key_name: ${{ secrets.AWS_KEY_NAME }}
       TF_VAR_aws_region: ${{ secrets.AWS_REGION }}
+      TF_VAR_cf_discord_webhook_url: ${{ secrets.DISCORD_CF_BOT }}
 
       GOOGLE_APPLICATION_CREDENTIALS: "${{ github.workspace }}/infra/terraform/gcp-creds.json"
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
