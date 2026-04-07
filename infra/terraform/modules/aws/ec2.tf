@@ -65,6 +65,8 @@ resource "aws_instance" "k3s" {
     Role        = "standby"
   }
 
+  depends_on = [aws_route_table_association.private]
+
   user_data = <<-EOF
     #!/bin/bash
     curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
