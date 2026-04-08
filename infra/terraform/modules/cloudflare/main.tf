@@ -217,7 +217,7 @@ resource "cloudflare_load_balancer_monitor" "monitor" {
   type           = "http"
   path           = "/health"
   port           = 80
-  interval       = 60
+  interval       = 20
   expected_codes = "200"
 
   header {
@@ -239,8 +239,9 @@ resource "cloudflare_load_balancer_pool" "pools" {
 }
 
 resource "cloudflare_load_balancer" "lb" {
-  zone_id = var.cf_zone_id
-  name    = var.app_domain
+  zone_id          = var.cf_zone_id
+  name             = var.app_domain
+  steering_policy  = "off"
 
   default_pool_ids = [
     cloudflare_load_balancer_pool.pools["gcp"].id,
