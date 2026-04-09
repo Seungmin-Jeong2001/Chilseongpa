@@ -217,7 +217,7 @@ resource "cloudflare_load_balancer_monitor" "monitor" {
   type           = "http"
   path           = "/health"
   port           = 80
-  interval       = 20
+  interval       = 60
   expected_codes = "200"
 
   header {
